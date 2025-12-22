@@ -1,0 +1,28 @@
+# Telegram Bot Framework
+aiogram==3.13.1
+
+# Database
+sqlalchemy==2.0.35
+asyncpg==0.29.0
+alembic==1.13.3
+greenlet>=3.0.0
+
+# Configuration
+python-dotenv==1.0.1
+
+# Excel Export
+openpyxl==3.1.5
+pandas==2.2.3
+
+# Date/Time
+pytz==2024.2
+
+# Additional utilities
+aiofiles==24.1.0
+
+# HTTP client for AI providers
+aiohttp>=3.9.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+aiosqlite>=0.19.0
