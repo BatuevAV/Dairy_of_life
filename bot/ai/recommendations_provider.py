@@ -94,13 +94,22 @@ class RecommendationsProvider:
         except Exception as e:
             return "❌ Ошибка при генерации рекомендации"
     
-    async def generate_breakfast_suggestions(self, user: User, count: int = 3) -> List[Dict[str, str]]:
-        """Generate breakfast suggestions based on user profile"""
+    async def generate_meal_suggestions(self, user: User, meal_type: str = "breakfast", count: int = 3) -> List[Dict[str, str]]:
+        """Generate meal suggestions based on user profile and meal type"""
         user_context = self._build_user_context(user)
+        
+        meal_names = {
+            "breakfast": "завтрака",
+            "lunch": "обеда",
+            "dinner": "ужина",
+            "snack": "перекуса"
+        }
+        
+        meal_name_ru = meal_names.get(meal_type, "приема пищи")
         
         prompt = f"""{user_context}
 
-Задание: Предложи {count} варианта завтрака для этого пользователя.
+Задание: Предложи {count} варианта {meal_name_ru} для этого пользователя.
 
 Верни результат СТРОГО в JSON формате (без комментариев и markdown):
 [
@@ -129,8 +138,17 @@ class RecommendationsProvider:
             suggestions = json.loads(response)
             return suggestions
         except Exception as e:
-            # Return fallback suggestions
-            return [
+            # Return fallback suggestions based on meal type
+            return self._get_fallback_suggestions(meal_type)
+    
+    async def generate_breakfast_suggestions(self, user: User, count: int = 3) -> List[Dict[str, str]]:
+        """Generate breakfast suggestions (compatibility wrapper)"""
+        return await self.generate_meal_suggestions(user, "breakfast", count)
+    
+    def _get_fallback_suggestions(self, meal_type: str) -> List[Dict[str, str]]:
+        """Get fallback suggestions when AI fails"""
+        fallbacks = {
+            "breakfast": [
                 {
                     "name": "Овсяная каша с фруктами",
                     "description": "Классический полезный завтрак",
@@ -155,7 +173,88 @@ class RecommendationsProvider:
                     "fat": 12,
                     "carbs": 28
                 }
+            ],
+            "lunch": [
+                {
+                    "name": "Куриная грудка с гречкой",
+                    "description": "Сбалансированный белковый обед",
+                    "kcal": 450,
+                    "protein": 40,
+                    "fat": 10,
+                    "carbs": 50
+                },
+                {
+                    "name": "Овощной суп с говядиной",
+                    "description": "Питательный и легкий",
+                    "kcal": 380,
+                    "protein": 30,
+                    "fat": 12,
+                    "carbs": 40
+                },
+                {
+                    "name": "Лосось с киноа и овощами",
+                    "description": "Полезные жиры и белок",
+                    "kcal": 520,
+                    "protein": 35,
+                    "fat": 20,
+                    "carbs": 45
+                }
+            ],
+            "dinner": [
+                {
+                    "name": "Запеченная рыба с салатом",
+                    "description": "Легкий ужин с белком",
+                    "kcal": 350,
+                    "protein": 35,
+                    "fat": 15,
+                    "carbs": 20
+                },
+                {
+                    "name": "Тушеные овощи с индейкой",
+                    "description": "Низкокалорийный вариант",
+                    "kcal": 320,
+                    "protein": 32,
+                    "fat": 10,
+                    "carbs": 25
+                },
+                {
+                    "name": "Творожная запеканка",
+                    "description": "Белковый ужин",
+                    "kcal": 280,
+                    "protein": 28,
+                    "fat": 8,
+                    "carbs": 22
+                }
+            ],
+            "snack": [
+                {
+                    "name": "Греческий йогурт с ягодами",
+                    "description": "Быстрый белковый перекус",
+                    "kcal": 150,
+                    "protein": 15,
+                    "fat": 3,
+                    "carbs": 18
+                },
+                {
+                    "name": "Орехи и сухофрукты",
+                    "description": "Энергетический микс",
+                    "kcal": 200,
+                    "protein": 6,
+                    "fat": 12,
+                    "carbs": 20
+                },
+                {
+                    "name": "Яблоко с арахисовой пастой",
+                    "description": "Полезный и вкусный",
+                    "kcal": 180,
+                    "protein": 8,
+                    "fat": 10,
+                    "carbs": 20
+                }
             ]
+        }
+        
+        return fallbacks.get(meal_type, fallbacks["snack"])
     
     async def generate_recipe(self, dish_name: str, user: User) -> Dict[str, any]:
         """Generate detailed recipe for a dish"""

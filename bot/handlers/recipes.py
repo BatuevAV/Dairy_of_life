@@ -15,9 +15,8 @@ from bot.ai.recommendations_provider import RecommendationsProvider
 router = Router()
 
 
-@router.message(Command("breakfast"))
-async def cmd_breakfast(message: Message):
-    """Generate breakfast suggestions"""
+async def _generate_meal_suggestions_handler(message: Message, meal_type: str):
+    """Universal handler for meal suggestions"""
     user_id = message.from_user.id
     
     # Check access
@@ -26,13 +25,38 @@ async def cmd_breakfast(message: Message):
         await message.answer(error_msg)
         return
     
-    await message.answer("🍳 Генерирую варианты завтрака для тебя...")
+    meal_emojis = {
+        "breakfast": "🍳",
+        "lunch": "🍽",
+        "dinner": "🍴",
+        "snack": "🥤"
+    }
+    
+    meal_names_ru = {
+        "breakfast": "завтрака",
+        "lunch": "обеда",
+        "dinner": "ужина",
+        "snack": "перекуса"
+    }
+    
+    meal_titles_ru = {
+        "breakfast": "Варианты завтрака",
+        "lunch": "Варианты обеда",
+        "dinner": "Варианты ужина",
+        "snack": "Варианты перекуса"
+    }
+    
+    emoji = meal_emojis.get(meal_type, "🍽")
+    meal_name = meal_names_ru.get(meal_type, "приема пищи")
+    title = meal_titles_ru.get(meal_type, "Варианты")
+    
+    await message.answer(f"{emoji} Генерирую варианты {meal_name} для тебя...")
     
     try:
         provider = RecommendationsProvider()
-        suggestions = await provider.generate_breakfast_suggestions(user, count=3)
+        suggestions = await provider.generate_meal_suggestions(user, meal_type, count=3)
         
-        text = "🍳 <b>Варианты завтрака:</b>\n\n"
+        text = f"{emoji} <b>{title}:</b>\n\n"
         
         keyboard_buttons = []
         for idx, dish in enumerate(suggestions, 1):
@@ -54,6 +78,30 @@ async def cmd_breakfast(message: Message):
         
     except Exception as e:
         await message.answer(f"❌ Ошибка при генерации: {str(e)}")
+
+
+@router.message(Command("breakfast"))
+async def cmd_breakfast(message: Message):
+    """Generate breakfast suggestions"""
+    await _generate_meal_suggestions_handler(message, "breakfast")
+
+
+@router.message(Command("lunch"))
+async def cmd_lunch(message: Message):
+    """Generate lunch suggestions"""
+    await _generate_meal_suggestions_handler(message, "lunch")
+
+
+@router.message(Command("dinner"))
+async def cmd_dinner(message: Message):
+    """Generate dinner suggestions"""
+    await _generate_meal_suggestions_handler(message, "dinner")
+
+
+@router.message(Command("snack"))
+async def cmd_snack(message: Message):
+    """Generate snack suggestions"""
+    await _generate_meal_suggestions_handler(message, "snack")
 
 
 @router.callback_query(F.data.startswith("recipe:"))
@@ -164,3 +212,74 @@ async def callback_detailed_workout(callback: CallbackQuery):
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка: {str(e)}")
         await callback.answer()
+
+
+@router.callback_query(F.data.startswith("meal_"))
+async def callback_regenerate_meal(callback: CallbackQuery):
+    """Regenerate meal suggestions from notification button"""
+    meal_type = callback.data.split("_", 1)[1]
+    
+    user_id = callback.from_user.id
+    
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await callback.answer(error_msg, show_alert=True)
+        return
+    
+    meal_emojis = {
+        "breakfast": "🍳",
+        "lunch": "🍽",
+        "dinner": "🍴",
+        "snack": "🥤"
+    }
+    
+    meal_names_ru = {
+        "breakfast": "завтрака",
+        "lunch": "обеда",
+        "dinner": "ужина",
+        "snack": "перекуса"
+    }
+    
+    meal_titles_ru = {
+        "breakfast": "Варианты завтрака",
+        "lunch": "Варианты обеда",
+        "dinner": "Варианты ужина",
+        "snack": "Варианты перекуса"
+    }
+    
+    emoji = meal_emojis.get(meal_type, "🍽")
+    meal_name = meal_names_ru.get(meal_type, "приема пищи")
+    title = meal_titles_ru.get(meal_type, "Варианты")
+    
+    await callback.message.answer(f"{emoji} Генерирую новые варианты {meal_name}...")
+    
+    try:
+        provider = RecommendationsProvider()
+        suggestions = await provider.generate_meal_suggestions(user, meal_type, count=3)
+        
+        text = f"{emoji} <b>{title}:</b>\n\n"
+        
+        keyboard_buttons = []
+        for idx, dish in enumerate(suggestions, 1):
+            text += (
+                f"<b>{idx}. {dish['name']}</b>\n"
+                f"   {dish['description']}\n"
+                f"   🔥 {dish['kcal']} ккал | "
+                f"Б: {dish['protein']}г | Ж: {dish['fat']}г | У: {dish['carbs']}г\n\n"
+            )
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=f"📋 Рецепт: {dish['name']}", 
+                    callback_data=f"recipe:{dish['name']}"
+                )
+            ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+        await callback.answer()
+        
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка при генерации: {str(e)}")
+        await callback.answer()
+

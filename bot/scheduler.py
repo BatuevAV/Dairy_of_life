@@ -66,7 +66,7 @@ class NotificationScheduler:
             logger.error(f"Error sending breakfast notification to {telegram_id}: {e}")
     
     async def send_lunch_notification(self, user_id: int, telegram_id: int):
-        """Send lunch reminder"""
+        """Send lunch reminder with suggestions"""
         try:
             async with get_db() as db:
                 result = await db.execute(
@@ -77,21 +77,41 @@ class NotificationScheduler:
                 if not user or not user.notifications_enabled:
                     return
                 
-                text = (
-                    "🍽 <b>Время обеда!</b>\n\n"
-                    "Не забудь записать, что ты съел. "
-                    "Можешь отправить фото или описать текстом.\n\n"
-                    "💡 Или используй команду /add для пошагового ввода."
-                )
+                # Generate lunch suggestions
+                provider = RecommendationsProvider()
+                suggestions = await provider.generate_meal_suggestions(user, "lunch", count=3)
                 
-                await self.bot.send_message(telegram_id, text, parse_mode="HTML")
+                text = "🍽 <b>Время обеда! Что приготовим?</b>\n\n"
+                
+                keyboard_buttons = []
+                for idx, dish in enumerate(suggestions, 1):
+                    text += (
+                        f"<b>{idx}. {dish['name']}</b>\n"
+                        f"   🔥 {dish['kcal']} ккал | "
+                        f"Б: {dish['protein']}г | Ж: {dish['fat']}г | У: {dish['carbs']}г\n\n"
+                    )
+                    keyboard_buttons.append([
+                        InlineKeyboardButton(
+                            text=f"📋 {dish['name']}", 
+                            callback_data=f"recipe:{dish['name']}"
+                        )
+                    ])
+                
+                # Add button to see more
+                keyboard_buttons.append([
+                    InlineKeyboardButton(text="🔄 Другие варианты", callback_data="meal_lunch")
+                ])
+                
+                keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+                await self.bot.send_message(telegram_id, text, parse_mode="HTML", reply_markup=keyboard)
+                
                 logger.info(f"Lunch notification sent to user {telegram_id}")
                 
         except Exception as e:
             logger.error(f"Error sending lunch notification to {telegram_id}: {e}")
     
     async def send_dinner_notification(self, user_id: int, telegram_id: int):
-        """Send dinner reminder"""
+        """Send dinner reminder with suggestions"""
         try:
             async with get_db() as db:
                 result = await db.execute(
@@ -102,14 +122,36 @@ class NotificationScheduler:
                 if not user or not user.notifications_enabled:
                     return
                 
-                text = (
-                    "🍴 <b>Время ужина!</b>\n\n"
-                    "Помни о балансе калорий в течение дня. "
-                    "Не забудь записать свой ужин!\n\n"
-                    "📊 Посмотри статистику за сегодня: /today"
-                )
+                # Generate dinner suggestions
+                provider = RecommendationsProvider()
+                suggestions = await provider.generate_meal_suggestions(user, "dinner", count=3)
                 
-                await self.bot.send_message(telegram_id, text, parse_mode="HTML")
+                text = "🍴 <b>Время ужина! Легкий и полезный вариант:</b>\n\n"
+                
+                keyboard_buttons = []
+                for idx, dish in enumerate(suggestions, 1):
+                    text += (
+                        f"<b>{idx}. {dish['name']}</b>\n"
+                        f"   🔥 {dish['kcal']} ккал | "
+                        f"Б: {dish['protein']}г | Ж: {dish['fat']}г | У: {dish['carbs']}г\n\n"
+                    )
+                    keyboard_buttons.append([
+                        InlineKeyboardButton(
+                            text=f"📋 {dish['name']}", 
+                            callback_data=f"recipe:{dish['name']}"
+                        )
+                    ])
+                
+                # Add button to see more
+                keyboard_buttons.append([
+                    InlineKeyboardButton(text="🔄 Другие варианты", callback_data="meal_dinner")
+                ])
+                
+                text += "\n💡 Помни о балансе калорий в течение дня. Посмотри статистику: /today"
+                
+                keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+                await self.bot.send_message(telegram_id, text, parse_mode="HTML", reply_markup=keyboard)
+                
                 logger.info(f"Dinner notification sent to user {telegram_id}")
                 
         except Exception as e:
