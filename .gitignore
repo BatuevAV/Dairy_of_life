@@ -78,3 +78,7 @@ htmlcov/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# Large files
+Ollama.zip
+*.zip
