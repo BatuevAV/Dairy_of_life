@@ -13,9 +13,10 @@ from aiogram.enums import ParseMode
 
 from bot.config import settings
 from bot.database import init_db
+from bot.scheduler import init_scheduler
 from bot.handlers import (
     start, mode, free_input, guided_input, reports, export,
-    settings as settings_handler, admin, photo_input
+    settings as settings_handler, admin, photo_input, recipes
 )
 
 # Configure logging
@@ -64,6 +65,7 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(admin.router)
     dp.include_router(mode.router)
+    dp.include_router(recipes.router)  # Recipe handler
     dp.include_router(photo_input.router)  # Photo handler BEFORE free_input
     dp.include_router(guided_input.router)
     dp.include_router(free_input.router)
@@ -73,6 +75,14 @@ async def main():
     
     logger.info("Handlers registered")
     
+    # Initialize scheduler for notifications
+    try:
+        scheduler = await init_scheduler(bot)
+        logger.info("Notification scheduler initialized")
+    except Exception as e:
+        logger.warning(f"Could not initialize scheduler: {e}")
+        scheduler = None
+    
     # Start bot
     try:
         logger.info("Bot started successfully!")
@@ -81,6 +91,8 @@ async def main():
     except Exception as e:
         logger.error(f"Error during bot execution: {e}")
     finally:
+        if scheduler:
+            scheduler.shutdown()
         await bot.session.close()
         logger.info("Bot stopped")
 

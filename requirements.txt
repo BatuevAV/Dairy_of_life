@@ -17,6 +17,9 @@ pandas==2.2.3
 # Date/Time
 pytz==2024.2
 
+# Scheduler for notifications
+APScheduler==3.10.4
+
 # Additional utilities
 aiofiles==24.1.0
 

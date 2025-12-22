@@ -25,6 +25,14 @@ class WorkoutType(enum.Enum):
     OTHER = "other"
 
 
+class MealType(enum.Enum):
+    """Meal types"""
+    BREAKFAST = "breakfast"
+    LUNCH = "lunch"
+    DINNER = "dinner"
+    SNACK = "snack"
+
+
 class User(Base):
     """User profile and settings"""
     __tablename__ = "users"
@@ -50,7 +58,14 @@ class User(Base):
     
     # Reminders
     reminder_enabled = Column(Boolean, default=True)
-    reminder_time = Column(String(5), default="21:00")  # HH:MM
+    reminder_time = Column(String(5), default="21:00")  # HH:MM (deprecated, kept for compatibility)
+    
+    # Notification settings (new)
+    notifications_enabled = Column(Boolean, default=True)
+    breakfast_time = Column(String(5), default="08:00")  # HH:MM
+    lunch_time = Column(String(5), default="13:00")  # HH:MM
+    dinner_time = Column(String(5), default="19:00")  # HH:MM
+    evening_reminder_time = Column(String(5), default="21:00")  # HH:MM
     
     # Access control (for white-list mode)
     is_owner = Column(Boolean, default=False)
@@ -71,6 +86,7 @@ class User(Base):
     
     # Relationships
     day_entries = relationship("DayEntry", back_populates="user", cascade="all, delete-orphan")
+    meal_entries = relationship("MealEntry", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_user_id}, age={self.age}, height={self.height})>"
@@ -145,6 +161,55 @@ class DayEntry(Base):
     
     def __repr__(self):
         return f"<DayEntry(date={self.entry_date}, kcal_eaten={self.kcal_eaten}, balance={self.kcal_balance})>"
+
+
+class MealEntry(Base):
+    """Individual meal entry - allows multiple meals per day"""
+    __tablename__ = "meal_entries"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    day_entry_id = Column(Integer, ForeignKey("day_entries.id"), nullable=True)  # Link to day entry if exists
+    
+    entry_date = Column(Date, nullable=False, index=True)
+    meal_type = Column(Enum(MealType), nullable=False)
+    meal_time = Column(String(5), nullable=True)  # HH:MM when meal was consumed
+    
+    # Food intake
+    kcal = Column(Float, nullable=True)
+    protein = Column(Float, nullable=True)  # grams
+    fat = Column(Float, nullable=True)  # grams
+    carbs = Column(Float, nullable=True)  # grams
+    
+    # AI estimation metadata
+    food_ai_estimated = Column(Boolean, default=False)
+    food_ai_model = Column(String(50), nullable=True)
+    food_ai_confidence = Column(Float, nullable=True)
+    food_items_json = Column(Text, nullable=True)  # JSON array of food items
+    
+    # Photo recognition
+    photo_analyzed = Column(Boolean, default=False)
+    photo_file_id = Column(String(200), nullable=True)
+    photo_description = Column(Text, nullable=True)
+    
+    # Text data
+    food_description = Column(Text, nullable=True)  # Human-readable description
+    raw_text = Column(Text, nullable=True)  # Original input
+    notes = Column(Text, nullable=True)
+    
+    # Recipe info (if meal was from suggested recipe)
+    from_recipe = Column(Boolean, default=False)
+    recipe_name = Column(String(200), nullable=True)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="meal_entries")
+    
+    def __repr__(self):
+        return f"<MealEntry(date={self.entry_date}, type={self.meal_type}, kcal={self.kcal})>"
 
 
 class ParseLog(Base):

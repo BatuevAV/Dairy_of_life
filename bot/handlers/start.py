@@ -3,12 +3,13 @@ Start handler - /start command
 """
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import settings
 from bot.database import get_db, User, InputMode
+from bot.ai.recommendations_provider import RecommendationsProvider
 
 router = Router()
 
@@ -43,15 +44,39 @@ async def cmd_start(message: Message, state: FSMContext):
             
             # Welcome message for new users
             if is_owner:
-                await message.answer(
-                    "👑 <b>Добро пожаловать, владелец!</b>\n\n"
-                    "У вас полный доступ к боту.\n\n"
-                    "<b>Управление пользователями:</b>\n"
-                    "/allow <user_id> - разрешить доступ\n"
-                    "/disallow <user_id> - запретить доступ\n"
-                    "/users - список пользователей\n\n"
-                    "Сначала настройте профиль: /settings"
-                )
+                # Generate AI recommendation for owner
+                try:
+                    provider = RecommendationsProvider()
+                    brief_rec = await provider.generate_brief_recommendation(user)
+                    
+                    welcome_msg = (
+                        "👑 <b>Добро пожаловать, владелец!</b>\n\n"
+                        f"💡 <b>Краткая рекомендация:</b>\n{brief_rec}\n\n"
+                        "<b>Управление пользователями:</b>\n"
+                        "/allow <user_id> - разрешить доступ\n"
+                        "/disallow <user_id> - запретить доступ\n"
+                        "/users - список пользователей\n\n"
+                        "Настройте профиль и уведомления: /settings"
+                    )
+                    
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🥗 Подробно о питании", callback_data="detailed_nutrition")],
+                        [InlineKeyboardButton(text="💪 Подробно о тренировках", callback_data="detailed_workout")],
+                        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="open_settings")]
+                    ])
+                    
+                    await message.answer(welcome_msg, parse_mode="HTML", reply_markup=keyboard)
+                except Exception as e:
+                    await message.answer(
+                        "👑 <b>Добро пожаловать, владелец!</b>\n\n"
+                        "У вас полный доступ к боту.\n\n"
+                        "<b>Управление пользователями:</b>\n"
+                        "/allow <user_id> - разрешить доступ\n"
+                        "/disallow <user_id> - запретить доступ\n"
+                        "/users - список пользователей\n\n"
+                        "Сначала настройте профиль: /settings",
+                        parse_mode="HTML"
+                    )
             else:
                 await message.answer(
                     f"👋 <b>Привет, {message.from_user.first_name}!</b>\n\n"
@@ -162,3 +187,11 @@ async def cmd_help(message: Message):
         )
     
     await message.answer(help_text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "open_settings")
+async def callback_open_settings(callback: CallbackQuery):
+    """Open settings menu"""
+    from bot.handlers.settings import cmd_settings
+    await cmd_settings(callback.message)
+    await callback.answer()
