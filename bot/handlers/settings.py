@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 
 from bot.config import settings
 from bot.database import get_db, User
+from bot.utils import check_user_access
 
 router = Router()
 
@@ -25,7 +26,10 @@ async def cmd_settings(message: Message):
     """Handle /settings command"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     # Get user profile
@@ -99,7 +103,11 @@ async def process_setting_value(message: Message, state: FSMContext):
     """Process new setting value"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
+        await state.clear()
         return
     
     data = await state.get_data()

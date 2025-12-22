@@ -36,8 +36,23 @@ async def cmd_add(message: Message, state: FSMContext):
     """Start guided entry"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
-        return
+    # Check access
+    async with get_db() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            await message.answer("❌ Сначала нажмите /start")
+            return
+        
+        if not user.is_allowed and not user.is_owner:
+            await message.answer(
+                "🔒 У вас нет доступа к боту.\n"
+                "Попросите владельца добавить вас: /allow"
+            )
+            return
     
     # Check if user has guided mode
     async with get_db() as db:

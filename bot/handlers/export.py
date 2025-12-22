@@ -10,7 +10,7 @@ from sqlalchemy.sql import and_
 
 from bot.config import settings
 from bot.database import get_db, User, DayEntry
-from bot.utils import create_excel_export
+from bot.utils import create_excel_export, check_user_access
 
 router = Router()
 
@@ -20,7 +20,10 @@ async def cmd_export(message: Message):
     """Handle /export command"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -46,7 +49,9 @@ async def callback_export(callback: CallbackQuery):
     """Handle export callback"""
     user_id = callback.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
         await callback.answer("Доступ запрещён")
         return
     

@@ -10,7 +10,7 @@ from sqlalchemy.sql import and_
 
 from bot.config import settings
 from bot.database import get_db, User, DayEntry
-from bot.utils import format_sleep_time, format_calories
+from bot.utils import format_sleep_time, format_calories, check_user_access
 
 router = Router()
 
@@ -20,7 +20,10 @@ async def cmd_today(message: Message):
     """Show today's summary"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     today = date.today()
@@ -65,7 +68,10 @@ async def cmd_yesterday(message: Message):
     """Show yesterday's summary"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     yesterday = date.today() - timedelta(days=1)
@@ -107,7 +113,10 @@ async def cmd_week(message: Message):
     """Show week summary"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     end_date = date.today()

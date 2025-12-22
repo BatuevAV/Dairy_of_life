@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 
 from bot.config import settings
 from bot.database import get_db, User, InputMode
+from bot.utils import check_user_access
 
 router = Router()
 
@@ -18,21 +19,14 @@ async def cmd_mode(message: Message):
     """Handle /mode command"""
     user_id = message.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
         return
     
     # Get current mode
-    async with get_db() as db:
-        result = await db.execute(
-            select(User).where(User.telegram_user_id == user_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            await message.answer("Используй /start для начала работы")
-            return
-        
-        current_mode = "Свободный" if user.input_mode == InputMode.FREE else "Пошаговый"
+    current_mode = "Свободный" if user.input_mode == InputMode.FREE else "Пошаговый"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -58,7 +52,9 @@ async def callback_mode(callback: CallbackQuery):
     """Handle mode selection callback"""
     user_id = callback.from_user.id
     
-    if user_id != settings.OWNER_TELEGRAM_ID:
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
         await callback.answer("Доступ запрещён")
         return
     
