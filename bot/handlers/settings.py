@@ -16,6 +16,12 @@ from bot.ai.recommendations_provider import RecommendationsProvider
 router = Router()
 
 
+class GoalStates(StatesGroup):
+    """FSM states for goal setting"""
+    waiting_for_goal = State()
+    waiting_for_medical = State()
+
+
 @router.message(Command("settime"))
 async def cmd_settime(message: Message):
     """Set notification time: /settime breakfast 08:30"""
@@ -339,4 +345,194 @@ async def process_setting_value(message: Message, state: FSMContext):
         await db.commit()
     
     await message.answer(f"✅ <b>{field_name.capitalize()}</b> обновлено: {value}", parse_mode="HTML")
+    await state.clear()
+
+
+# Goal and medical recommendations handlers
+
+@router.callback_query(F.data == "set_goal")
+async def callback_set_goal(callback: CallbackQuery):
+    """Show goal selection menu"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬇️ Похудеть", callback_data="goal_lose_weight")],
+        [InlineKeyboardButton(text="➡️ Сохранить вес", callback_data="goal_maintain")],
+        [InlineKeyboardButton(text="💪 Набрать мышечную массу", callback_data="goal_gain_muscle")],
+        [InlineKeyboardButton(text="🔥 Подсушиться (сжечь жир)", callback_data="goal_cut")],
+        [InlineKeyboardButton(text="🏋️ Стать сильнее", callback_data="goal_get_stronger")],
+        [InlineKeyboardButton(text="❤️ Улучшить здоровье", callback_data="goal_health")],
+        [InlineKeyboardButton(text="✏️ Ввести свою цель", callback_data="goal_custom")],
+        [InlineKeyboardButton(text="◀️ Назад к настройкам", callback_data="menu_settings")],
+    ])
+    
+    await callback.message.edit_text(
+        "🎯 <b>Выбери свою цель</b>\n\n"
+        "Это поможет мне давать более точные рекомендации по питанию и тренировкам:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("goal_"))
+async def callback_goal_selected(callback: CallbackQuery, state: FSMContext):
+    """Handle goal selection"""
+    user_id = callback.from_user.id
+    goal_type = callback.data.replace("goal_", "")
+    
+    goal_map = {
+        "lose_weight": "Похудеть",
+        "maintain": "Сохранить текущий вес",
+        "gain_muscle": "Набрать мышечную массу",
+        "cut": "Подсушиться (сжечь жир, сохранив мышцы)",
+        "get_stronger": "Стать сильнее",
+        "health": "Улучшить здоровье и самочувствие"
+    }
+    
+    if goal_type == "custom":
+        await callback.message.edit_text(
+            "✏️ <b>Опиши свою цель</b>\n\n"
+            "Например:\n"
+            "• Подготовиться к марафону\n"
+            "• Улучшить гибкость\n"
+            "• Набрать 5 кг мышечной массы\n\n"
+            "Напиши свою цель одним сообщением:",
+            parse_mode="HTML"
+        )
+        await state.set_state(GoalStates.waiting_for_goal)
+        await callback.answer()
+        return
+    
+    goal_text = goal_map.get(goal_type, "Не указана")
+    
+    # Update goal in database
+    async with get_db() as db:
+        await db.execute(
+            update(User)
+            .where(User.telegram_user_id == user_id)
+            .values(goal=goal_text)
+        )
+        await db.commit()
+    
+    await callback.message.edit_text(
+        f"✅ <b>Цель установлена!</b>\n\n"
+        f"Твоя цель: {goal_text}\n\n"
+        f"Теперь рекомендации будут учитывать эту цель! 🎯",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад к настройкам", callback_data="menu_settings")]
+        ])
+    )
+    await callback.answer()
+
+
+@router.message(GoalStates.waiting_for_goal)
+async def process_custom_goal(message: Message, state: FSMContext):
+    """Process custom goal input"""
+    user_id = message.from_user.id
+    goal_text = message.text.strip()
+    
+    if len(goal_text) < 5:
+        await message.answer("❌ Опиши цель подробнее (минимум 5 символов)")
+        return
+    
+    if len(goal_text) > 500:
+        await message.answer("❌ Слишком длинное описание. Максимум 500 символов.")
+        return
+    
+    # Update goal in database
+    async with get_db() as db:
+        await db.execute(
+            update(User)
+            .where(User.telegram_user_id == user_id)
+            .values(goal=goal_text)
+        )
+        await db.commit()
+    
+    await message.answer(
+        f"✅ <b>Цель установлена!</b>\n\n"
+        f"Твоя цель: {goal_text}\n\n"
+        f"Теперь рекомендации будут учитывать эту цель! 🎯",
+        parse_mode="HTML"
+    )
+    await state.clear()
+
+
+@router.callback_query(F.data == "set_medical")
+async def callback_set_medical(callback: CallbackQuery, state: FSMContext):
+    """Request medical recommendations"""
+    await callback.message.edit_text(
+        "🏥 <b>Врачебные рекомендации</b>\n\n"
+        "Если у тебя есть медицинские рекомендации от врача, "
+        "противопоказания или ограничения - опиши их.\n\n"
+        "<b>Например:</b>\n"
+        "• Аллергия на молочные продукты\n"
+        "• Проблемы с коленями - избегать бега\n"
+        "• Диабет - контролировать углеводы\n"
+        "• Вегетарианская диета\n\n"
+        "Напиши свои рекомендации одним сообщением или нажми Пропустить:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏭ Пропустить", callback_data="skip_medical")],
+            [InlineKeyboardButton(text="◀️ Назад к настройкам", callback_data="menu_settings")]
+        ])
+    )
+    await state.set_state(GoalStates.waiting_for_medical)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "skip_medical")
+async def callback_skip_medical(callback: CallbackQuery, state: FSMContext):
+    """Skip medical recommendations"""
+    user_id = callback.from_user.id
+    
+    # Clear medical recommendations
+    async with get_db() as db:
+        await db.execute(
+            update(User)
+            .where(User.telegram_user_id == user_id)
+            .values(medical_recommendations=None)
+        )
+        await db.commit()
+    
+    await callback.message.edit_text(
+        "✅ Врачебные рекомендации пропущены.\n\n"
+        "Ты всегда можешь добавить их позже через настройки профиля.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад к настройкам", callback_data="menu_settings")]
+        ])
+    )
+    await state.clear()
+    await callback.answer()
+
+
+@router.message(GoalStates.waiting_for_medical)
+async def process_medical_recommendations(message: Message, state: FSMContext):
+    """Process medical recommendations input"""
+    user_id = message.from_user.id
+    medical_text = message.text.strip()
+    
+    if len(medical_text) < 5:
+        await message.answer("❌ Опиши рекомендации подробнее (минимум 5 символов) или нажми Пропустить")
+        return
+    
+    if len(medical_text) > 1000:
+        await message.answer("❌ Слишком длинное описание. Максимум 1000 символов.")
+        return
+    
+    # Update medical recommendations in database
+    async with get_db() as db:
+        await db.execute(
+            update(User)
+            .where(User.telegram_user_id == user_id)
+            .values(medical_recommendations=medical_text)
+        )
+        await db.commit()
+    
+    await message.answer(
+        f"✅ <b>Врачебные рекомендации сохранены!</b>\n\n"
+        f"Твои рекомендации: {medical_text}\n\n"
+        f"Я буду учитывать их при составлении рекомендаций! 🏥",
+        parse_mode="HTML"
+    )
     await state.clear()

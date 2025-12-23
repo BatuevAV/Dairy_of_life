@@ -57,6 +57,8 @@ async def callback_menu_settings(callback: CallbackQuery):
     # Format settings
     gender_ru = "Мужской" if user.gender == "male" else "Женский"
     notifications_status = "Включены ✅" if user.notifications_enabled else "Выключены ❌"
+    goal_display = user.goal if user.goal else "Не указана"
+    medical_display = user.medical_recommendations[:50] + "..." if user.medical_recommendations and len(user.medical_recommendations) > 50 else (user.medical_recommendations if user.medical_recommendations else "Не указаны")
     
     settings_text = (
         "⚙️ <b>Настройки</b>\n\n"
@@ -64,6 +66,10 @@ async def callback_menu_settings(callback: CallbackQuery):
         f"  Пол: {gender_ru}\n"
         f"  Возраст: {user.age} лет\n"
         f"  Рост: {user.height} см\n\n"
+        "<b>🎯 Твоя цель:</b>\n"
+        f"  {goal_display}\n\n"
+        "<b>🏥 Врачебные рекомендации:</b>\n"
+        f"  {medical_display}\n\n"
         "<b>🔔 Уведомления:</b>\n"
         f"  {notifications_status}\n"
         f"  🍳 Завтрак: {user.breakfast_time}\n"
@@ -74,6 +80,8 @@ async def callback_menu_settings(callback: CallbackQuery):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Настройка профиля", callback_data="menu_profile_settings")],
+        [InlineKeyboardButton(text="🎯 Установить цель", callback_data="set_goal")],
+        [InlineKeyboardButton(text="🏥 Врачебные рекомендации", callback_data="set_medical")],
         [InlineKeyboardButton(text="🍳 Рекомендации по питанию", callback_data="detailed_nutrition")],
         [InlineKeyboardButton(text="💪 Рекомендации по тренировкам", callback_data="detailed_workout")],
         [InlineKeyboardButton(text="🔔 Вкл/выкл уведомления", callback_data="toggle_notifications")],
@@ -100,17 +108,26 @@ async def callback_menu_profile_settings(callback: CallbackQuery):
         await callback.answer("Используй /start для начала работы", show_alert=True)
         return
     
+    goal_display = user.goal if user.goal else "Не указана"
+    medical_display = user.medical_recommendations if user.medical_recommendations else "Не указаны"
+    
     settings_text = (
         "👤 <b>Настройка профиля</b>\n\n"
         "<b>Текущие параметры:</b>\n"
         f"  Возраст: {user.age} лет\n"
         f"  Рост: {user.height} см\n\n"
+        "<b>🎯 Твоя цель:</b>\n"
+        f"  {goal_display}\n\n"
+        "<b>🏥 Врачебные рекомендации:</b>\n"
+        f"  {medical_display}\n\n"
         "<b>Коэффициенты расчёта:</b>\n"
         f"  Ккал на шаг: {user.step_kcal_coef}\n"
         f"  Зал (ккал/час): {user.gym_kcal_per_hour}\n"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎯 Изменить цель", callback_data="set_goal")],
+        [InlineKeyboardButton(text="🏥 Изменить врачебные рекомендации", callback_data="set_medical")],
         [InlineKeyboardButton(text="✏️ Изменить возраст", callback_data="edit_age")],
         [InlineKeyboardButton(text="✏️ Изменить рост", callback_data="edit_height")],
         [InlineKeyboardButton(text="✏️ Изменить ккал/шаг", callback_data="edit_step_coef")],

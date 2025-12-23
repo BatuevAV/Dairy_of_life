@@ -11,6 +11,7 @@ from sqlalchemy.sql import and_
 from bot.config import settings
 from bot.database import get_db, User, DayEntry
 from bot.utils import format_sleep_time, format_calories, check_user_access
+from bot.handlers.export import cmd_export
 
 router = Router()
 

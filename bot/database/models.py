@@ -45,6 +45,10 @@ class User(Base):
     age = Column(Integer, default=28)
     height = Column(Integer, default=179)  # cm
     
+    # User goals and medical info
+    goal = Column(Text, nullable=True)  # User's fitness goal (lose weight, maintain, gain muscle, etc.)
+    medical_recommendations = Column(Text, nullable=True)  # Medical restrictions or recommendations
+    
     # Settings
     input_mode = Column(Enum(InputMode), default=InputMode.GUIDED)
     timezone = Column(String(50), default="Asia/Bangkok")

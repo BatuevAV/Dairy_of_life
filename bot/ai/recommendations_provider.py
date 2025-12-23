@@ -27,12 +27,23 @@ class RecommendationsProvider:
     def _build_user_context(self, user: User) -> str:
         """Build user context for AI prompt"""
         gender_ru = "Мужчина" if user.gender == "male" else "Женщина"
-        return f"""
+        
+        context = f"""
 Пользователь:
 - Пол: {gender_ru}
 - Возраст: {user.age} лет
 - Рост: {user.height} см
 """
+        
+        # Add goal if set
+        if user.goal:
+            context += f"- Цель: {user.goal}\n"
+        
+        # Add medical recommendations if set
+        if user.medical_recommendations:
+            context += f"- Врачебные рекомендации/ограничения: {user.medical_recommendations}\n"
+        
+        return context
     
     async def generate_brief_recommendation(self, user: User) -> str:
         """Generate brief recommendation after profile setup"""
@@ -41,7 +52,8 @@ class RecommendationsProvider:
         prompt = f"""{user_context}
 
 Задание: Дай ОЧЕНЬ КРАТКУЮ рекомендацию (максимум 3-4 предложения) по питанию и тренировкам для этого пользователя.
-Будь конкретным и мотивирующим. Не пиши общие фразы."""
+Будь конкретным и мотивирующим. Не пиши общие фразы.
+ОБЯЗАТЕЛЬНО учитывай цель пользователя и врачебные рекомендации, если они указаны."""
         
         try:
             response = await self.ai.generate_text(prompt)
@@ -65,6 +77,9 @@ class RecommendationsProvider:
 - Питьевой режим
 - Дополнительные советы
 
+ВАЖНО: ОБЯЗАТЕЛЬНО учитывай цель пользователя и врачебные рекомендации, если они указаны!
+Если есть ограничения - не рекомендуй запрещённые продукты.
+
 Формат: используй эмодзи и структурированный текст."""
         
         try:
@@ -73,8 +88,11 @@ class RecommendationsProvider:
         except Exception as e:
             # Return default nutrition advice
             gender_ru = "мужчин" if user.gender == "male" else "женщин"
+            goal_text = f"\n🎯 <b>С учетом твоей цели: {user.goal}</b>\n" if user.goal else ""
+            medical_text = f"\n🏥 <b>Учитываем: {user.medical_recommendations}</b>\n" if user.medical_recommendations else ""
+            
             return f"""🥗 <b>Рекомендации по питанию</b>
-
+{goal_text}{medical_text}
 📊 <b>Калорийность и БЖУ:</b>
 • Для {gender_ru} {user.age} лет: 2000-2500 ккал в день
 • Белки: 25-30% (1.5-2г на кг веса)
@@ -120,6 +138,9 @@ class RecommendationsProvider:
 - Прогрессия нагрузки
 - Восстановление между тренировками
 
+ВАЖНО: ОБЯЗАТЕЛЬНО учитывай цель пользователя и врачебные рекомендации, если они указаны!
+Если есть медицинские ограничения - адаптируй рекомендации под них.
+
 Формат: используй эмодзи и структурированный текст."""
         
         try:
@@ -128,8 +149,11 @@ class RecommendationsProvider:
         except Exception as e:
             # Return default workout advice
             gender_ru = "мужчин" if user.gender == "male" else "женщин"
+            goal_text = f"\n🎯 <b>С учетом твоей цели: {user.goal}</b>\n" if user.goal else ""
+            medical_text = f"\n🏥 <b>Учитываем: {user.medical_recommendations}</b>\n" if user.medical_recommendations else ""
+            
             return f"""💪 <b>Рекомендации по тренировкам</b>
-
+{goal_text}{medical_text}
 📅 <b>Частота тренировок:</b>
 • 3-4 раза в неделю для начинающих
 • 4-5 раз в неделю для продолжающих
@@ -185,6 +209,9 @@ class RecommendationsProvider:
         prompt = f"""{user_context}
 
 Задание: Предложи {count} варианта {meal_name_ru} для этого пользователя.
+
+ВАЖНО: ОБЯЗАТЕЛЬНО учитывай цель пользователя и врачебные рекомендации, если они указаны!
+Если есть ограничения по продуктам - НЕ предлагай их.
 
 Верни результат СТРОГО в JSON формате (без комментариев и markdown):
 [
@@ -436,6 +463,9 @@ class RecommendationsProvider:
         prompt = f"""{user_context}
 
 Задание: Создай подробный рецепт для блюда "{dish_name}".
+
+ВАЖНО: ОБЯЗАТЕЛЬНО учитывай цель пользователя и врачебные рекомендации!
+Если есть ограничения по продуктам - адаптируй рецепт или предложи альтернативу.
 
 Верни результат СТРОГО в JSON формате:
 {{
