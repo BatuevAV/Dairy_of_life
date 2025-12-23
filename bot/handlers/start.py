@@ -3,7 +3,7 @@ Start handler - /start command
 """
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
@@ -148,11 +148,14 @@ async def cmd_help(message: Message):
         help_text = (
             "📚 <b>Справка по использованию бота (Владелец)</b>\n\n"
             "<b>👑 Команды владельца:</b>\n"
-            "/allow <user_id> - разрешить доступ пользователю\n"
-            "/disallow <user_id> - запретить доступ\n"
+            "/allow [user_id] - разрешить доступ пользователю\n"
+            "/disallow [user_id] - запретить доступ\n"
             "/users - список всех пользователей\n\n"
+            "<b>🏠 Главное меню:</b>\n"
+            "/menu - Открыть главное меню с разделами\n\n"
             "<b>📝 Основные команды:</b>\n"
             "/mode - Выбрать режим ввода (свободный/пошаговый)\n"
+            "/add - Добавить данные за день (пошаговый режим)\n"
             "/today - Сводка за сегодня\n"
             "/yesterday - Сводка за вчера\n"
             "/week - Статистика за неделю\n"
@@ -163,6 +166,7 @@ async def cmd_help(message: Message):
             "/lunch - Варианты обеда\n"
             "/dinner - Варианты ужина\n"
             "/snack - Варианты перекуса\n\n"
+            "<b>💡 Совет:</b> Используй /menu для удобной навигации!\n\n"
             "<b>Режимы ввода:</b>\n"
             "• <b>Свободный</b> - пишешь всё одним сообщением\n"
             "  Пример: \"Сон: 22:30-07:00, Шаги: 6200, Зал 60 мин, Ккал: 1850\"\n"
@@ -176,8 +180,11 @@ async def cmd_help(message: Message):
     else:
         help_text = (
             "📚 <b>Справка по использованию бота</b>\n\n"
+            "<b>🏠 Главное меню:</b>\n"
+            "/menu - Открыть главное меню с разделами\n\n"
             "<b>📝 Основные команды:</b>\n"
             "/mode - Выбрать режим ввода (свободный/пошаговый)\n"
+            "/add - Добавить данные за день (пошаговый режим)\n"
             "/today - Сводка за сегодня\n"
             "/yesterday - Сводка за вчера\n"
             "/week - Статистика за неделю\n"
@@ -188,6 +195,7 @@ async def cmd_help(message: Message):
             "/lunch - Варианты обеда\n"
             "/dinner - Варианты ужина\n"
             "/snack - Варианты перекуса\n\n"
+            "<b>💡 Совет:</b> Используй /menu для удобной навигации!\n\n"
             "<b>Режимы ввода:</b>\n"
             "• <b>Свободный</b> - пишешь всё одним сообщением\n"
             "  Пример: \"Сон: 22:30-07:00, Шаги: 6200, Зал 60 мин, Ккал: 1850\"\n"

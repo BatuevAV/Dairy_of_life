@@ -283,3 +283,31 @@ async def callback_regenerate_meal(callback: CallbackQuery):
         await callback.message.answer(f"❌ Ошибка при генерации: {str(e)}")
         await callback.answer()
 
+
+# Callback handlers for menu integration
+@router.callback_query(F.data == "meal_breakfast")
+async def callback_meal_breakfast(callback: CallbackQuery):
+    """Show breakfast suggestions via callback"""
+    await callback.answer()
+    await cmd_breakfast(callback.message)
+
+
+@router.callback_query(F.data == "meal_lunch")
+async def callback_meal_lunch(callback: CallbackQuery):
+    """Show lunch suggestions via callback"""
+    await callback.answer()
+    await cmd_lunch(callback.message)
+
+
+@router.callback_query(F.data == "meal_dinner")
+async def callback_meal_dinner(callback: CallbackQuery):
+    """Show dinner suggestions via callback"""
+    await callback.answer()
+    await cmd_dinner(callback.message)
+
+
+@router.callback_query(F.data == "meal_snack")
+async def callback_meal_snack(callback: CallbackQuery):
+    """Show snack suggestions via callback"""
+    await callback.answer()
+    await cmd_snack(callback.message)

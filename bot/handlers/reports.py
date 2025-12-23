@@ -2,9 +2,9 @@
 Reports handler - /today, /yesterday, /week
 """
 from datetime import date, timedelta
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select
 from sqlalchemy.sql import and_
 
@@ -278,3 +278,32 @@ def _format_week_report(entries: list, start_date: date, end_date: date) -> str:
         report += f"💪 <b>Тренировок:</b> {len(workouts)}\n"
     
     return report
+
+
+# Callback handlers for menu integration
+@router.callback_query(F.data == "stats_today")
+async def callback_stats_today(callback: CallbackQuery):
+    """Show today's summary via callback"""
+    await callback.answer()
+    await cmd_today(callback.message)
+
+
+@router.callback_query(F.data == "stats_yesterday")
+async def callback_stats_yesterday(callback: CallbackQuery):
+    """Show yesterday's summary via callback"""
+    await callback.answer()
+    await cmd_yesterday(callback.message)
+
+
+@router.callback_query(F.data == "stats_week")
+async def callback_stats_week(callback: CallbackQuery):
+    """Show week summary via callback"""
+    await callback.answer()
+    await cmd_week(callback.message)
+
+
+@router.callback_query(F.data == "stats_export")
+async def callback_stats_export(callback: CallbackQuery):
+    """Export data via callback"""
+    await callback.answer()
+    await cmd_export(callback.message)

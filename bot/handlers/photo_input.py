@@ -129,17 +129,42 @@ async def handle_photo(message: Message, state: FSMContext):
             first_question = estimate.clarification_questions[0]
             response += f"\n{first_question.question}"
             
-            # Создаем кнопки с вариантами
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
+            # Добавляем вариант "Без соуса" / "Ничего" если это вопрос о дополнениях
+            options = list(first_question.options)
+            if "соус" in first_question.question.lower() or "добав" in first_question.question.lower():
+                # Проверяем, нет ли уже варианта "нет/без/ничего" в списке
+                has_none_option = any(
+                    any(word in opt.lower() for word in ["нет", "без", "ничего", "none", "no"])
+                    for opt in options
+                )
+                if not has_none_option:
+                    options.append("🚫 Без соуса / Ничего")
+            
+            # Создаем кнопки с вариантами (по 2 в ряд)
+            buttons = []
+            row = []
+            for i, option in enumerate(options):
+                row.append(InlineKeyboardButton(
                     text=option,
                     callback_data=f"clarify_{first_question.field}_{i}"
-                )] for i, option in enumerate(first_question.options)
-            ])
+                ))
+                if len(row) == 2:  # По 2 кнопки в ряд
+                    buttons.append(row)
+                    row = []
+            if row:  # Добавляем последнюю строку если есть
+                buttons.append(row)
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            
+            # Сохраняем расширенный список опций для правильной обработки
+            await state.update_data(
+                current_question_options=options
+            )
             
             await state.update_data(
                 current_question_index=0,
-                total_questions=len(estimate.clarification_questions)
+                total_questions=len(estimate.clarification_questions),
+                current_question_options=options
             )
             await state.set_state(PhotoInputState.waiting_for_clarification)
             
@@ -171,9 +196,12 @@ async def handle_clarification(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     # Парсим ответ: clarify_field_index
+    # Формат: clarify_{field}_{index}
+    # Проблема: field может содержать подчеркивания (например "portion_size")
+    # Поэтому берем последнюю часть как индекс, а все остальное - как field
     parts = callback.data.split("_")
-    field = parts[1]
-    option_index = int(parts[2])
+    option_index = int(parts[-1])  # Последняя часть - всегда индекс
+    field = "_".join(parts[1:-1])  # Все между "clarify" и индексом - это field
     
     # Получаем данные
     data = await state.get_data()
@@ -181,10 +209,15 @@ async def handle_clarification(callback: CallbackQuery, state: FSMContext):
     current_q_index = data['current_question_index']
     total_questions = data['total_questions']
     clarification_answers = data.get('clarification_answers', {})
+    current_options = data.get('current_question_options', [])
     
-    # Сохраняем ответ
+    # Сохраняем ответ (используем расширенный список опций)
     question = estimate.clarification_questions[current_q_index]
-    selected_option = question.options[option_index]
+    if option_index < len(current_options):
+        selected_option = current_options[option_index]
+    else:
+        # Fallback на оригинальный список
+        selected_option = question.options[option_index] if option_index < len(question.options) else "Не указано"
     clarification_answers[field] = selected_option
     
     # Следующий вопрос?
@@ -194,37 +227,61 @@ async def handle_clarification(callback: CallbackQuery, state: FSMContext):
         # Есть еще вопросы
         next_question = estimate.clarification_questions[next_q_index]
         
-        response = f"Отлично! **{field}**: {selected_option}\n\n"
-        response += f"**Следующий вопрос ({next_q_index + 1}/{total_questions}):**\n"
+        # Экранируем специальные символы в selected_option для Markdown
+        safe_option = selected_option.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+        
+        response = f"Отлично! *{field}*: {safe_option}\n\n"
+        response += f"*Следующий вопрос ({next_q_index + 1}/{total_questions}):*\n"
         response += next_question.question
         
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
+        # Добавляем вариант "Без соуса" / "Ничего" если это вопрос о дополнениях
+        options = list(next_question.options)
+        if "соус" in next_question.question.lower() or "добав" in next_question.question.lower():
+            # Проверяем, нет ли уже варианта "нет/без/ничего" в списке
+            has_none_option = any(
+                any(word in opt.lower() for word in ["нет", "без", "ничего", "none", "no"])
+                for opt in options
+            )
+            if not has_none_option:
+                options.append("🚫 Без соуса / Ничего")
+        
+        # Создаем кнопки (по 2 в ряд)
+        buttons = []
+        row = []
+        for i, option in enumerate(options):
+            row.append(InlineKeyboardButton(
                 text=option,
                 callback_data=f"clarify_{next_question.field}_{i}"
-            )] for i, option in enumerate(next_question.options)
-        ])
+            ))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         await state.update_data(
             current_question_index=next_q_index,
-            clarification_answers=clarification_answers
+            clarification_answers=clarification_answers,
+            current_question_options=options
         )
         
         await callback.message.edit_text(response, reply_markup=keyboard, parse_mode="Markdown")
     
     else:
         # Все вопросы заданы - пересчитываем с учетом ответов
-        await callback.message.edit_text("🔄 Обновляю оценку с учетом ваших ответов...")
-        
         # TODO: Здесь можно переспросить AI с дополнительным контекстом
         # Пока просто показываем финальное подтверждение
         
-        response = "**Финальная оценка:**\n\n"
+        response = "*Финальная оценка:*\n\n"
         response += f"📊 Калории: ~{estimate.calories:.0f} ккал\n"
         response += f"БЖУ: {estimate.protein:.0f}/{estimate.fat:.0f}/{estimate.carbs:.0f}г\n\n"
-        response += "**Ваши уточнения:**\n"
+        response += "*Ваши уточнения:*\n"
         for field, answer in clarification_answers.items():
-            response += f"• {field}: {answer}\n"
+            # Экранируем специальные символы для Markdown
+            safe_answer = answer.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+            response += f"• {field}: {safe_answer}\n"
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [

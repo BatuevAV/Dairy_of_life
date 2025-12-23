@@ -2,6 +2,7 @@
 AI Provider for generating personalized recommendations and recipes
 """
 import json
+import random
 from typing import Dict, List, Optional
 from bot.config import settings
 from bot.database import User
@@ -46,7 +47,8 @@ class RecommendationsProvider:
             response = await self.ai.generate_text(prompt)
             return response.strip()
         except Exception as e:
-            return f"Отлично! Теперь ты можешь начать вести дневник питания и активности. 💪"
+            # Return default recommendation on error
+            return "💪 Отлично! Начни вести дневник питания и активности. Следи за балансом калорий, старайся делать хотя бы 8000 шагов в день и тренируйся 3-4 раза в неделю. Ты на правильном пути!"
     
     async def generate_detailed_nutrition_recommendation(self, user: User) -> str:
         """Generate detailed nutrition recommendation"""
@@ -69,7 +71,39 @@ class RecommendationsProvider:
             response = await self.ai.generate_text(prompt)
             return response.strip()
         except Exception as e:
-            return "❌ Ошибка при генерации рекомендации"
+            # Return default nutrition advice
+            gender_ru = "мужчин" if user.gender == "male" else "женщин"
+            return f"""🥗 <b>Рекомендации по питанию</b>
+
+📊 <b>Калорийность и БЖУ:</b>
+• Для {gender_ru} {user.age} лет: 2000-2500 ккал в день
+• Белки: 25-30% (1.5-2г на кг веса)
+• Жиры: 25-30% (преимущественно ненасыщенные)
+• Углеводы: 40-50% (сложные углеводы)
+
+✅ <b>Рекомендуемые продукты:</b>
+• Белковые: курица, рыба, яйца, творог
+• Углеводы: гречка, овсянка, киноа, цельнозерновой хлеб
+• Овощи и фрукты: 400-500г в день
+• Полезные жиры: орехи, авокадо, оливковое масло
+
+❌ <b>Ограничить:</b>
+• Быстрые углеводы: сладости, белый хлеб
+• Жареное и фастфуд
+• Газированные напитки
+
+⏰ <b>Режим:</b>
+• 3-4 приема пищи в день
+• Завтрак обязателен (30% дневной калорийности)
+• Ужин за 2-3 часа до сна
+
+💧 <b>Питьевой режим:</b>
+• 30-40 мл на кг веса (около 2-2.5 литров в день)
+
+💡 <b>Дополнительно:</b>
+• Ведите дневник питания (вы уже это делаете!)
+• Взвешивайтесь 1 раз в неделю утром
+• Делайте разгрузочные дни при необходимости"""
     
     async def generate_detailed_workout_recommendation(self, user: User) -> str:
         """Generate detailed workout recommendation"""
@@ -92,7 +126,48 @@ class RecommendationsProvider:
             response = await self.ai.generate_text(prompt)
             return response.strip()
         except Exception as e:
-            return "❌ Ошибка при генерации рекомендации"
+            # Return default workout advice
+            gender_ru = "мужчин" if user.gender == "male" else "женщин"
+            return f"""💪 <b>Рекомендации по тренировкам</b>
+
+📅 <b>Частота тренировок:</b>
+• 3-4 раза в неделю для начинающих
+• 4-5 раз в неделю для продолжающих
+• Минимум 1 день отдыха между тренировками
+
+🏃 <b>Виды активности:</b>
+• Кардио: бег, плавание, велосипед (150 мин в неделю)
+• Силовые: зал, TRX, упражнения с весом тела
+• Растяжка: йога, стретчинг
+• Ежедневная активность: 8000-10000 шагов
+
+⏱ <b>Продолжительность:</b>
+• Кардио: 30-45 минут
+• Силовые: 45-60 минут
+• Разминка: 10 минут
+• Заминка: 10 минут
+
+📋 <b>Структура тренировки:</b>
+1. Разминка (суставная гимнастика, легкое кардио)
+2. Основная часть (силовые/кардио)
+3. Заминка (растяжка)
+
+⚠️ <b>Важно:</b>
+• Начинайте с легких весов
+• Следите за техникой выполнения
+• При болях - остановитесь
+• Пейте воду во время тренировки
+
+📈 <b>Прогрессия:</b>
+• Увеличивайте нагрузку постепенно (10% в неделю)
+• Ведите дневник тренировок
+• Периодизация: 3-4 недели нагрузка, 1 неделя отдых
+
+😴 <b>Восстановление:</b>
+• Сон 7-8 часов
+• Белок после тренировки (30г в течение часа)
+• Массаж, баня (опционально)
+• Не тренируйте одну группу мышц 2 дня подряд"""
     
     async def generate_meal_suggestions(self, user: User, meal_type: str = "breakfast", count: int = 3) -> List[Dict[str, str]]:
         """Generate meal suggestions based on user profile and meal type"""
@@ -147,7 +222,7 @@ class RecommendationsProvider:
     
     def _get_fallback_suggestions(self, meal_type: str) -> List[Dict[str, str]]:
         """Get fallback suggestions when AI fails"""
-        fallbacks = {
+        all_suggestions = {
             "breakfast": [
                 {
                     "name": "Овсяная каша с фруктами",
@@ -172,6 +247,30 @@ class RecommendationsProvider:
                     "protein": 25,
                     "fat": 12,
                     "carbs": 28
+                },
+                {
+                    "name": "Сырники со сметаной",
+                    "description": "Вкусный белковый завтрак",
+                    "kcal": 380,
+                    "protein": 22,
+                    "fat": 14,
+                    "carbs": 42
+                },
+                {
+                    "name": "Гранола с йогуртом",
+                    "description": "Энергетический завтрак",
+                    "kcal": 340,
+                    "protein": 15,
+                    "fat": 10,
+                    "carbs": 48
+                },
+                {
+                    "name": "Блинчики с творогом",
+                    "description": "Сытный завтрак на выходные",
+                    "kcal": 420,
+                    "protein": 18,
+                    "fat": 16,
+                    "carbs": 52
                 }
             ],
             "lunch": [
@@ -198,6 +297,30 @@ class RecommendationsProvider:
                     "protein": 35,
                     "fat": 20,
                     "carbs": 45
+                },
+                {
+                    "name": "Паста с курицей и грибами",
+                    "description": "Сытный итальянский обед",
+                    "kcal": 480,
+                    "protein": 32,
+                    "fat": 14,
+                    "carbs": 58
+                },
+                {
+                    "name": "Плов с индейкой",
+                    "description": "Восточное блюдо с мясом птицы",
+                    "kcal": 460,
+                    "protein": 28,
+                    "fat": 16,
+                    "carbs": 54
+                },
+                {
+                    "name": "Рыбные котлеты с рисом",
+                    "description": "Легкий рыбный обед",
+                    "kcal": 420,
+                    "protein": 34,
+                    "fat": 12,
+                    "carbs": 48
                 }
             ],
             "dinner": [
@@ -224,6 +347,30 @@ class RecommendationsProvider:
                     "protein": 28,
                     "fat": 8,
                     "carbs": 22
+                },
+                {
+                    "name": "Куриные котлеты на пару",
+                    "description": "Диетический ужин",
+                    "kcal": 310,
+                    "protein": 36,
+                    "fat": 12,
+                    "carbs": 18
+                },
+                {
+                    "name": "Омлет с брокколи",
+                    "description": "Быстрый белковый ужин",
+                    "kcal": 260,
+                    "protein": 24,
+                    "fat": 14,
+                    "carbs": 12
+                },
+                {
+                    "name": "Тунец с овощным салатом",
+                    "description": "Легкий средиземноморский ужин",
+                    "kcal": 290,
+                    "protein": 30,
+                    "fat": 10,
+                    "carbs": 16
                 }
             ],
             "snack": [
@@ -250,11 +397,37 @@ class RecommendationsProvider:
                     "protein": 8,
                     "fat": 10,
                     "carbs": 20
+                },
+                {
+                    "name": "Протеиновый батончик",
+                    "description": "Удобный перекус",
+                    "kcal": 190,
+                    "protein": 12,
+                    "fat": 6,
+                    "carbs": 22
+                },
+                {
+                    "name": "Творог с бананом",
+                    "description": "Белковый перекус с углеводами",
+                    "kcal": 170,
+                    "protein": 16,
+                    "fat": 4,
+                    "carbs": 20
+                },
+                {
+                    "name": "Хумус с овощными палочками",
+                    "description": "Легкий средиземноморский перекус",
+                    "kcal": 140,
+                    "protein": 6,
+                    "fat": 8,
+                    "carbs": 14
                 }
             ]
         }
         
-        return fallbacks.get(meal_type, fallbacks["snack"])
+        suggestions = all_suggestions.get(meal_type, all_suggestions["snack"])
+        # Выбираем 3 случайных варианта без повторений
+        return random.sample(suggestions, min(3, len(suggestions)))
     
     async def generate_recipe(self, dish_name: str, user: User) -> Dict[str, any]:
         """Generate detailed recipe for a dish"""
@@ -300,13 +473,141 @@ class RecommendationsProvider:
             recipe = json.loads(response)
             return recipe
         except Exception as e:
+            # Log the error for debugging
+            print(f"❌ AI recipe generation failed for '{dish_name}': {str(e)}")
+            # Return fallback recipe based on dish name
+            return self._get_fallback_recipe(dish_name)
+    
+    def _get_fallback_recipe(self, dish_name: str) -> Dict[str, any]:
+        """Get fallback recipe when AI fails"""
+        # Try to match common dishes
+        dish_lower = dish_name.lower()
+        
+        if any(word in dish_lower for word in ["рыба", "лосось", "тунец", "треска", "семга", "форель"]):
             return {
                 "name": dish_name,
-                "description": "Рецепт временно недоступен",
+                "description": "Полезное блюдо с высоким содержанием белка и омега-3",
+                "servings": 2,
+                "cooking_time": 30,
+                "ingredients": [
+                    {"item": "Филе рыбы (лосось/треска)", "amount": "400 г"},
+                    {"item": "Лимон", "amount": "1 шт"},
+                    {"item": "Оливковое масло", "amount": "2 ст.л."},
+                    {"item": "Соль, перец", "amount": "по вкусу"},
+                    {"item": "Свежая зелень", "amount": "по вкусу"}
+                ],
+                "instructions": [
+                    "Разогрейте духовку до 180°C",
+                    "Рыбу промойте, обсушите, посолите и поперчите",
+                    "Сбрызните оливковым маслом и лимонным соком",
+                    "Заверните в фольгу или выложите на противень",
+                    "Запекайте 20-25 минут",
+                    "Подавайте с зеленью и овощным салатом"
+                ],
+                "nutrition": {
+                    "kcal": 250,
+                    "protein": 30,
+                    "fat": 12,
+                    "carbs": 5
+                }
+            }
+        elif "омлет" in dish_lower or "яйц" in dish_lower:
+            return {
+                "name": dish_name,
+                "description": "Быстрый и питательный завтрак",
+                "servings": 1,
+                "cooking_time": 10,
+                "ingredients": [
+                    {"item": "Яйца", "amount": "3 шт"},
+                    {"item": "Молоко", "amount": "50 мл"},
+                    {"item": "Болгарский перец", "amount": "50 г"},
+                    {"item": "Помидоры", "amount": "50 г"},
+                    {"item": "Сливочное масло", "amount": "10 г"},
+                    {"item": "Соль, перец", "amount": "по вкусу"}
+                ],
+                "instructions": [
+                    "Взбейте яйца с молоком, посолите, поперчите",
+                    "Овощи нарежьте мелкими кубиками",
+                    "Разогрейте сковороду с маслом",
+                    "Обжарьте овощи 2-3 минуты",
+                    "Залейте яичной смесью",
+                    "Готовьте под крышкой на среднем огне 5-7 минут"
+                ],
+                "nutrition": {
+                    "kcal": 280,
+                    "protein": 20,
+                    "fat": 15,
+                    "carbs": 10
+                }
+            }
+        elif "овсян" in dish_lower or "каш" in dish_lower:
+            return {
+                "name": dish_name,
+                "description": "Классический здоровый завтрак",
+                "servings": 1,
+                "cooking_time": 10,
+                "ingredients": [
+                    {"item": "Овсяные хлопья", "amount": "60 г"},
+                    {"item": "Молоко или вода", "amount": "200 мл"},
+                    {"item": "Банан", "amount": "1 шт"},
+                    {"item": "Мед", "amount": "1 ч.л."},
+                    {"item": "Орехи", "amount": "20 г"}
+                ],
+                "instructions": [
+                    "Залейте хлопья горячим молоком или водой",
+                    "Варите 5-7 минут, помешивая",
+                    "Добавьте нарезанный банан",
+                    "Полейте медом, посыпьте орехами",
+                    "Дайте настояться 2-3 минуты"
+                ],
+                "nutrition": {
+                    "kcal": 350,
+                    "protein": 12,
+                    "fat": 8,
+                    "carbs": 55
+                }
+            }
+        elif "курица" in dish_lower or "грудка" in dish_lower:
+            return {
+                "name": dish_name,
+                "description": "Диетическое белковое блюдо",
+                "servings": 2,
+                "cooking_time": 40,
+                "ingredients": [
+                    {"item": "Куриная грудка", "amount": "400 г"},
+                    {"item": "Гречка", "amount": "150 г"},
+                    {"item": "Соевый соус", "amount": "2 ст.л."},
+                    {"item": "Чеснок", "amount": "2 зубчика"},
+                    {"item": "Специи", "amount": "по вкусу"}
+                ],
+                "instructions": [
+                    "Курицу нарежьте, замаринуйте в соевом соусе на 15 минут",
+                    "Гречку промойте и отварите (1:2 с водой)",
+                    "Обжарьте курицу с чесноком до готовности",
+                    "Подавайте с гречкой и овощами"
+                ],
+                "nutrition": {
+                    "kcal": 450,
+                    "protein": 40,
+                    "fat": 10,
+                    "carbs": 50
+                }
+            }
+        else:
+            # Generic fallback
+            return {
+                "name": dish_name,
+                "description": f"Рецепт для '{dish_name}' временно недоступен. Попробуйте выбрать другое блюдо или обратитесь к администратору для настройки AI.",
                 "servings": 1,
                 "cooking_time": 30,
-                "ingredients": [],
-                "instructions": ["Рецепт в разработке"],
+                "ingredients": [
+                    {"item": "Основные ингредиенты", "amount": "по рецепту"}
+                ],
+                "instructions": [
+                    "💡 Рецепт находится в разработке",
+                    "🔧 Настройте AI провайдер (Ollama или Gemini) для автоматической генерации",
+                    "📧 Или обратитесь к администратору бота"
+                ],
                 "nutrition": {
                     "kcal": 0,
                     "protein": 0,

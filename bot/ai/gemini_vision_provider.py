@@ -178,8 +178,16 @@ class GeminiVisionProvider(VisionAIProvider):
             
             text = text.strip()
             
-            # Попытка парсинга
-            data = json.loads(text)
+            # Попытка парсинга с обработкой переносов строк
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                # Если не получилось, пробуем очистить переносы строк внутри строк
+                import re
+                logger.warning(f"Первая попытка парсинга не удалась: {e}. Пробуем очистить JSON...")
+                # Заменяем переносы строк внутри строковых значений на пробелы
+                text = re.sub(r':\s*"([^"]*\n[^"]*)"', lambda m: ': "' + m.group(1).replace('\n', ' ') + '"', text, flags=re.MULTILINE)
+                data = json.loads(text)
             
             # Парсим уточняющие вопросы
             questions = []

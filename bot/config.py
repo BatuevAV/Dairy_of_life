@@ -27,6 +27,12 @@ class Settings:
     # Timezone
     TIMEZONE: str = os.getenv('TIMEZONE', 'Asia/Bangkok')
     
+    # AI Provider settings
+    DEFAULT_AI_PROVIDER: str = os.getenv('DEFAULT_AI_PROVIDER', 'ollama')
+    OLLAMA_BASE_URL: str = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+    OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'llama2')
+    GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
+    
     # Debug mode
     DEBUG: bool = os.getenv('DEBUG', 'False').lower() == 'true'
     
