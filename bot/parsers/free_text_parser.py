@@ -63,6 +63,23 @@ class FreeTextParser:
         if food_data:
             parsed['food'] = food_data
         
+        # Fallback: if only date found and text is short, treat entire text as food description
+        if 'food' not in parsed and len(parsed) <= 1:  # Only date or empty
+            # Check if text doesn't contain other field keywords
+            other_keywords = ['сон', 'sleep', 'шаг', 'step', 'трен', 'workout', 'вес', 'weight', 'талия', 'waist']
+            has_other_fields = any(keyword in text_lower for keyword in other_keywords)
+            
+            if not has_other_fields and len(text.strip()) > 3:
+                # Remove date words
+                description = text.strip()
+                date_words = ['сегодня', 'вчера', 'позавчера', 'today', 'yesterday']
+                for word in date_words:
+                    description = re.sub(r'\b' + word + r'\b', '', description, flags=re.IGNORECASE)
+                description = description.strip()
+                
+                if description and len(description) > 3:
+                    parsed['food'] = {'description': description}
+        
         # Determine missing critical fields
         if 'sleep' not in parsed:
             missing.append('сон')

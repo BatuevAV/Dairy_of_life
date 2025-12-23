@@ -52,7 +52,7 @@ class OllamaProvider(AIProvider):
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,  # Lower = more consistent
+                        "temperature": 0.1,  # Very low = more consistent and deterministic
                         "num_predict": 500
                     }
                 }
@@ -80,7 +80,20 @@ class OllamaProvider(AIProvider):
         """Build prompt for Ollama"""
         
         if language == "ru":
-            prompt = f"""Оцени калорийность и БЖУ для каждого блюда. Ответь ТОЛЬКО в формате JSON без дополнительного текста:
+            prompt = f"""Ты - эксперт по питанию. Оцени калорийность и БЖУ для блюда.
+
+ВАЖНО: 
+- Используй стандартные порции (1 порция = ~200-300г)
+- Subway сэндвич 30см = ~400-500 ккал (в зависимости от начинки)
+- Multigrain = мультизерновой хлеб
+- Chicken Ham = куриная ветчина
+- 3 Cheese = 3 вида сыра
+
+Примеры:
+- Subway Multigrain Chicken Ham and 3 Cheese (30см): ~450 ккал, 35г белка, 15г жира, 50г углеводов
+- Курица с гречкой: ~400 ккал, 40г белка, 8г жира, 45г углеводов
+
+Ответь ТОЛЬКО в формате JSON без дополнительного текста:
 
 {{
   "items": [
@@ -92,7 +105,20 @@ class OllamaProvider(AIProvider):
 
 JSON:"""
         else:
-            prompt = f"""Estimate calories and macros for each food item. Answer ONLY in JSON format without additional text:
+            prompt = f"""You are a nutrition expert. Estimate calories and macros for the food.
+
+IMPORTANT:
+- Use standard portions (1 serving = ~200-300g)
+- Subway 30cm sandwich = ~400-500 kcal (depends on filling)
+- Multigrain = whole grain bread
+- Chicken Ham = chicken ham
+- 3 Cheese = 3 types of cheese
+
+Examples:
+- Subway Multigrain Chicken Ham and 3 Cheese (30cm): ~450 kcal, 35g protein, 15g fat, 50g carbs
+- Chicken with buckwheat: ~400 kcal, 40g protein, 8g fat, 45g carbs
+
+Answer ONLY in JSON format without additional text:
 
 {{
   "items": [
