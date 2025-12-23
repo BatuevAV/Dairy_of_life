@@ -305,12 +305,17 @@ class FreeTextParser:
         food_desc_patterns = [
             r'еда[:\s]*(.+?)(?=вес|шаг|трен|сон|$)',
             r'food[:\s]*(.+?)(?=weight|step|workout|sleep|$)',
+            r'(?:съел|поел|ел|ate|had|eaten)[:\s]*(.+?)(?=вес|шаг|трен|сон|ккал|бжу|$)',
         ]
         
         for pattern in food_desc_patterns:
             match = re.search(pattern, text_lower, re.DOTALL)
             if match:
-                food_data['description'] = match.group(1).strip()
+                description = match.group(1).strip()
+                # Remove common noise words
+                description = re.sub(r'\s+(сегодня|вчера|today|yesterday)\s*', ' ', description).strip()
+                if description and len(description) > 3:  # At least 3 chars
+                    food_data['description'] = description
                 break
         
         return food_data if food_data else None

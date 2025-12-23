@@ -67,12 +67,12 @@ async def main():
     dp.include_router(menu.router)  # Main menu handler
     dp.include_router(mode.router)
     dp.include_router(recipes.router)  # Recipe handler
+    dp.include_router(settings_handler.router)  # Settings BEFORE free_input to handle FSM states
     dp.include_router(photo_input.router)  # Photo handler BEFORE free_input
     dp.include_router(guided_input.router)
-    dp.include_router(free_input.router)
+    dp.include_router(free_input.router)  # Free input should be last to catch remaining messages
     dp.include_router(reports.router)
     dp.include_router(export.router)
-    dp.include_router(settings_handler.router)
     
     logger.info("Handlers registered")
     
@@ -88,7 +88,11 @@ async def main():
     try:
         logger.info("Bot started successfully!")
         logger.info(f"Owner Telegram ID: {settings.OWNER_TELEGRAM_ID}")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await dp.start_polling(
+            bot, 
+            allowed_updates=dp.resolve_used_update_types(),
+            drop_pending_updates=True  # Skip old updates to avoid "query too old" errors
+        )
     except Exception as e:
         logger.error(f"Error during bot execution: {e}")
     finally:
