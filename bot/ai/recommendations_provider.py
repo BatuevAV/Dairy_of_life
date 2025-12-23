@@ -504,7 +504,10 @@ class RecommendationsProvider:
             return recipe
         except Exception as e:
             # Log the error for debugging
-            print(f"❌ AI recipe generation failed for '{dish_name}': {str(e)}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"AI recipe generation failed for '{dish_name}': {str(e)}")
+            logger.error(f"AI provider: {self.provider}")
             # Return fallback recipe based on dish name
             return self._get_fallback_recipe(dish_name)
     

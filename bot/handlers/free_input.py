@@ -157,18 +157,18 @@ async def confirm_free_input(callback: CallbackQuery, state: FSMContext):
         # Ask for meal type
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="🍳 Завтрак", callback_data="meal_type_breakfast"),
-                InlineKeyboardButton(text="🍽 Обед", callback_data="meal_type_lunch"),
+                InlineKeyboardButton(text="🍳 Завтрак", callback_data="food_meal_breakfast"),
+                InlineKeyboardButton(text="🍽 Обед", callback_data="food_meal_lunch"),
             ],
             [
-                InlineKeyboardButton(text="🍴 Ужин", callback_data="meal_type_dinner"),
-                InlineKeyboardButton(text="🥤 Перекус", callback_data="meal_type_snack"),
+                InlineKeyboardButton(text="🍴 Ужин", callback_data="food_meal_dinner"),
+                InlineKeyboardButton(text="🥤 Перекус", callback_data="food_meal_snack"),
             ],
             [
-                InlineKeyboardButton(text="⏰ Указать время", callback_data="meal_set_time"),
+                InlineKeyboardButton(text="⏰ Указать время", callback_data="food_meal_set_time"),
             ],
             [
-                InlineKeyboardButton(text="⏭ Пропустить", callback_data="meal_type_skip"),
+                InlineKeyboardButton(text="⏭ Пропустить", callback_data="food_meal_skip"),
             ]
         ])
         
@@ -352,16 +352,21 @@ def _create_entry_from_parsed(user_id: int, entry_date: date, parsed: dict, raw_
 
 # Meal type selection handlers
 
-@router.callback_query(FreeInput.meal_type_selection, F.data.startswith("meal_type_"))
+@router.callback_query(FreeInput.meal_type_selection, F.data.startswith("food_meal_"))
 async def handle_meal_type_selection(callback: CallbackQuery, state: FSMContext):
     """Handle meal type selection"""
-    meal_type_str = callback.data.replace("meal_type_", "")
+    meal_type_str = callback.data.replace("food_meal_", "")
     
     if meal_type_str == "skip":
         # Save without meal type
         await state.update_data(meal_type=None, meal_time=None)
         await _save_entry(callback, state)
         await callback.answer()
+        return
+    
+    if meal_type_str == "set_time":
+        # Handle time setting - moved to separate handler
+        await handle_meal_set_time(callback, state)
         return
     
     # Map to MealType enum
@@ -385,7 +390,7 @@ async def handle_meal_type_selection(callback: CallbackQuery, state: FSMContext)
     await callback.answer()
 
 
-@router.callback_query(FreeInput.meal_type_selection, F.data == "meal_set_time")
+@router.callback_query(FreeInput.meal_type_selection, F.data == "food_meal_set_time")
 async def handle_meal_set_time(callback: CallbackQuery, state: FSMContext):
     """Ask user to specify meal time"""
     await callback.message.edit_text(
@@ -414,15 +419,15 @@ async def handle_meal_time_input(message: Message, state: FSMContext):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="🍳 Завтрак", callback_data="meal_type_breakfast"),
-                InlineKeyboardButton(text="🍽 Обед", callback_data="meal_type_lunch"),
+                InlineKeyboardButton(text="🍳 Завтрак", callback_data="food_meal_breakfast"),
+                InlineKeyboardButton(text="🍽 Обед", callback_data="food_meal_lunch"),
             ],
             [
-                InlineKeyboardButton(text="🍴 Ужин", callback_data="meal_type_dinner"),
-                InlineKeyboardButton(text="🥤 Перекус", callback_data="meal_type_snack"),
+                InlineKeyboardButton(text="🍴 Ужин", callback_data="food_meal_dinner"),
+                InlineKeyboardButton(text="🥤 Перекус", callback_data="food_meal_snack"),
             ],
             [
-                InlineKeyboardButton(text="⏭ Пропустить", callback_data="meal_type_skip"),
+                InlineKeyboardButton(text="⏭ Пропустить", callback_data="food_meal_skip"),
             ]
         ])
         
