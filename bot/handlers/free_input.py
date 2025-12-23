@@ -1,7 +1,7 @@
 """
 Free input handler - parse free-form text with AI estimation
 """
-from datetime import date, datetime
+from datetime import date, datetime, time
 import json
 import logging
 from aiogram import Router, F
@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.sql import and_
 
 from bot.config import settings
-from bot.database import get_db, User, DayEntry, InputMode, WorkoutType
+from bot.database import get_db, User, DayEntry, MealEntry, InputMode, WorkoutType, MealType
 from bot.parsers import FreeTextParser
 from bot.calculations import update_day_entry_calculations
 from bot.ai import OllamaProvider
@@ -24,6 +24,8 @@ router = Router()
 class FreeInput(StatesGroup):
     """States for free input confirmation"""
     confirm = State()
+    meal_type_selection = State()
+    meal_time_selection = State()
 
 
 @router.message(F.text, F.text.len() > 20)
@@ -146,50 +148,43 @@ async def handle_free_text(message: Message, state: FSMContext):
 
 @router.callback_query(FreeInput.confirm, F.data == "free_confirm")
 async def confirm_free_input(callback: CallbackQuery, state: FSMContext):
-    """Confirm and save free input"""
+    """Confirm and save free input or ask for meal type"""
     data = await state.get_data()
     parsed = data['parsed_data']
-    raw_text = data['raw_text']
-    user_db_id = data['user_db_id']
     
-    async with get_db() as db:
-        # Get user
-        result = await db.execute(select(User).where(User.id == user_db_id))
-        user = result.scalar_one()
+    # Check if food was detected
+    if 'food' in parsed:
+        # Ask for meal type
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🍳 Завтрак", callback_data="meal_type_breakfast"),
+                InlineKeyboardButton(text="🍽 Обед", callback_data="meal_type_lunch"),
+            ],
+            [
+                InlineKeyboardButton(text="🍴 Ужин", callback_data="meal_type_dinner"),
+                InlineKeyboardButton(text="🥤 Перекус", callback_data="meal_type_snack"),
+            ],
+            [
+                InlineKeyboardButton(text="⏰ Указать время", callback_data="meal_set_time"),
+            ],
+            [
+                InlineKeyboardButton(text="⏭ Пропустить", callback_data="meal_type_skip"),
+            ]
+        ])
         
-        # Get entry date
-        entry_date = parsed.get('date', date.today())
-        
-        # Check if entry exists
-        result = await db.execute(
-            select(DayEntry).where(
-                and_(
-                    DayEntry.user_id == user_db_id,
-                    DayEntry.entry_date == entry_date
-                )
-            )
+        await callback.message.edit_text(
+            "🍽 <b>Тип приема пищи</b>\n\n"
+            "Выбери, когда ты это ел:",
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
-        entry = result.scalar_one_or_none()
         
-        if entry:
-            # Update existing entry (merge data)
-            _merge_parsed_data_to_entry(entry, parsed, raw_text)
-        else:
-            # Create new entry
-            entry = _create_entry_from_parsed(user_db_id, entry_date, parsed, raw_text)
-            db.add(entry)
-        
-        # Calculate fields
-        entry = update_day_entry_calculations(entry, user)
-        
-        await db.commit()
+        await state.set_state(FreeInput.meal_type_selection)
+        await callback.answer()
+        return
     
-    await callback.message.edit_text("✅ Данные сохранены!")
-    await callback.message.answer(
-        "Используй /today для просмотра сводки."
-    )
-    
-    await state.clear()
+    # No food - save directly
+    await _save_entry(callback, state)
     await callback.answer()
 
 
@@ -353,3 +348,187 @@ def _create_entry_from_parsed(user_id: int, entry_date: date, parsed: dict, raw_
             entry.carbs = food['carbs']
     
     return entry
+
+
+# Meal type selection handlers
+
+@router.callback_query(FreeInput.meal_type_selection, F.data.startswith("meal_type_"))
+async def handle_meal_type_selection(callback: CallbackQuery, state: FSMContext):
+    """Handle meal type selection"""
+    meal_type_str = callback.data.replace("meal_type_", "")
+    
+    if meal_type_str == "skip":
+        # Save without meal type
+        await state.update_data(meal_type=None, meal_time=None)
+        await _save_entry(callback, state)
+        await callback.answer()
+        return
+    
+    # Map to MealType enum
+    meal_type_map = {
+        "breakfast": MealType.BREAKFAST,
+        "lunch": MealType.LUNCH,
+        "dinner": MealType.DINNER,
+        "snack": MealType.SNACK
+    }
+    
+    meal_type = meal_type_map.get(meal_type_str)
+    if not meal_type:
+        await callback.answer("❌ Неверный тип приема пищи", show_alert=True)
+        return
+    
+    # Save meal type
+    await state.update_data(meal_type=meal_type, meal_time=None)
+    
+    # Save entry
+    await _save_entry(callback, state)
+    await callback.answer()
+
+
+@router.callback_query(FreeInput.meal_type_selection, F.data == "meal_set_time")
+async def handle_meal_set_time(callback: CallbackQuery, state: FSMContext):
+    """Ask user to specify meal time"""
+    await callback.message.edit_text(
+        "⏰ <b>Укажи время приема пищи</b>\n\n"
+        "Напиши время в формате HH:MM\n"
+        "Например: 08:30 или 14:00",
+        parse_mode="HTML"
+    )
+    
+    await state.set_state(FreeInput.meal_time_selection)
+    await callback.answer()
+
+
+@router.message(FreeInput.meal_time_selection, F.text)
+async def handle_meal_time_input(message: Message, state: FSMContext):
+    """Process meal time input"""
+    time_text = message.text.strip()
+    
+    # Parse time
+    try:
+        time_obj = datetime.strptime(time_text, "%H:%M").time()
+        meal_time_str = time_obj.strftime("%H:%M")
+        
+        # Show meal type selection with time saved
+        await state.update_data(meal_time=meal_time_str)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🍳 Завтрак", callback_data="meal_type_breakfast"),
+                InlineKeyboardButton(text="🍽 Обед", callback_data="meal_type_lunch"),
+            ],
+            [
+                InlineKeyboardButton(text="🍴 Ужин", callback_data="meal_type_dinner"),
+                InlineKeyboardButton(text="🥤 Перекус", callback_data="meal_type_snack"),
+            ],
+            [
+                InlineKeyboardButton(text="⏭ Пропустить", callback_data="meal_type_skip"),
+            ]
+        ])
+        
+        await message.answer(
+            f"✅ Время установлено: {meal_time_str}\n\n"
+            "🍽 Теперь выбери тип приема пищи:",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+        await state.set_state(FreeInput.meal_type_selection)
+        
+    except ValueError:
+        await message.answer(
+            "❌ Неверный формат времени. Используй HH:MM\n"
+            "Например: 08:30 или 14:00"
+        )
+
+
+async def _save_entry(callback: CallbackQuery, state: FSMContext):
+    """Save entry with optional meal information"""
+    data = await state.get_data()
+    parsed = data['parsed_data']
+    raw_text = data['raw_text']
+    user_db_id = data['user_db_id']
+    meal_type = data.get('meal_type')
+    meal_time = data.get('meal_time')
+    ai_estimate = data.get('ai_estimate')
+    
+    async with get_db() as db:
+        # Get user
+        result = await db.execute(select(User).where(User.id == user_db_id))
+        user = result.scalar_one()
+        
+        # Get entry date
+        entry_date = parsed.get('date', date.today())
+        
+        # Check if entry exists
+        result = await db.execute(
+            select(DayEntry).where(
+                and_(
+                    DayEntry.user_id == user_db_id,
+                    DayEntry.entry_date == entry_date
+                )
+            )
+        )
+        entry = result.scalar_one_or_none()
+        
+        if entry:
+            # Update existing entry (merge data)
+            _merge_parsed_data_to_entry(entry, parsed, raw_text)
+        else:
+            # Create new entry
+            entry = _create_entry_from_parsed(user_db_id, entry_date, parsed, raw_text)
+            db.add(entry)
+        
+        # If food was detected and meal_type is set, create MealEntry
+        if 'food' in parsed and meal_type:
+            food = parsed['food']
+            
+            meal_entry = MealEntry(
+                user_id=user_db_id,
+                entry_date=entry_date,
+                meal_type=meal_type,
+                meal_time=meal_time,
+                kcal=food.get('kcal'),
+                protein=food.get('protein'),
+                fat=food.get('fat'),
+                carbs=food.get('carbs'),
+                food_description=food.get('description'),
+                raw_text=raw_text,
+                food_ai_estimated=food.get('ai_estimated', False),
+                food_ai_model=food.get('ai_model'),
+                food_ai_confidence=food.get('ai_confidence'),
+                food_items_json=json.dumps(food.get('ai_items', []), ensure_ascii=False) if 'ai_items' in food else None
+            )
+            
+            db.add(meal_entry)
+        
+        # Calculate fields
+        entry = update_day_entry_calculations(entry, user)
+        
+        await db.commit()
+    
+    meal_type_emoji = {
+        MealType.BREAKFAST: "🍳",
+        MealType.LUNCH: "🍽",
+        MealType.DINNER: "🍴",
+        MealType.SNACK: "🥤"
+    }
+    
+    message_text = "✅ Данные сохранены!"
+    if meal_type:
+        emoji = meal_type_emoji.get(meal_type, "🍽")
+        type_name = {
+            MealType.BREAKFAST: "Завтрак",
+            MealType.LUNCH: "Обед",
+            MealType.DINNER: "Ужин",
+            MealType.SNACK: "Перекус"
+        }.get(meal_type, "Прием пищи")
+        
+        message_text = f"✅ Данные сохранены!\n\n{emoji} {type_name}"
+        if meal_time:
+            message_text += f" в {meal_time}"
+    
+    await callback.message.edit_text(message_text)
+    await callback.message.answer("Используй /today для просмотра сводки.")
+    
+    await state.clear()
