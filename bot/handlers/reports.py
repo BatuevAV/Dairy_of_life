@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.sql import and_
 
 from bot.config import settings
-from bot.database import get_db, User, DayEntry
+from bot.database import get_db, User, DayEntry, MealEntry, MealType
 from bot.utils import format_sleep_time, format_calories, check_user_access
 from bot.handlers.export import cmd_export
 
@@ -17,9 +17,10 @@ router = Router()
 
 
 @router.message(Command("today"))
-async def cmd_today(message: Message):
+async def cmd_today(message: Message, user_id: int = None):
     """Show today's summary"""
-    user_id = message.from_user.id
+    if user_id is None:
+        user_id = message.from_user.id
     
     # Check access
     user, has_access, error_msg = await check_user_access(user_id)
@@ -50,6 +51,17 @@ async def cmd_today(message: Message):
             )
         )
         entry = result.scalar_one_or_none()
+        
+        # Get meals for today
+        meals_result = await db.execute(
+            select(MealEntry).where(
+                and_(
+                    MealEntry.user_id == user.id,
+                    MealEntry.entry_date == today
+                )
+            ).order_by(MealEntry.meal_time)
+        )
+        meals = meals_result.scalars().all()
     
     if not entry:
         await message.answer(
@@ -60,14 +72,15 @@ async def cmd_today(message: Message):
         return
     
     # Format report
-    report = _format_day_report(entry, today)
+    report = _format_day_report(entry, today, meals)
     await message.answer(report, parse_mode="HTML")
 
 
 @router.message(Command("yesterday"))
-async def cmd_yesterday(message: Message):
+async def cmd_yesterday(message: Message, user_id: int = None):
     """Show yesterday's summary"""
-    user_id = message.from_user.id
+    if user_id is None:
+        user_id = message.from_user.id
     
     # Check access
     user, has_access, error_msg = await check_user_access(user_id)
@@ -96,6 +109,17 @@ async def cmd_yesterday(message: Message):
             )
         )
         entry = result.scalar_one_or_none()
+        
+        # Get meals for yesterday
+        meals_result = await db.execute(
+            select(MealEntry).where(
+                and_(
+                    MealEntry.user_id == user.id,
+                    MealEntry.entry_date == yesterday
+                )
+            ).order_by(MealEntry.meal_time)
+        )
+        meals = meals_result.scalars().all()
     
     if not entry:
         await message.answer(
@@ -105,7 +129,7 @@ async def cmd_yesterday(message: Message):
         )
         return
     
-    report = _format_day_report(entry, yesterday)
+    report = _format_day_report(entry, yesterday, meals)
     await message.answer(report, parse_mode="HTML")
 
 
@@ -158,7 +182,7 @@ async def cmd_week(message: Message):
     await message.answer(report, parse_mode="HTML")
 
 
-def _format_day_report(entry: DayEntry, day: date) -> str:
+def _format_day_report(entry: DayEntry, day: date, meals: list = None) -> str:
     """Format single day report"""
     report = f"📅 <b>{day.strftime('%d.%m.%Y')}</b>\n\n"
     
@@ -199,6 +223,42 @@ def _format_day_report(entry: DayEntry, day: date) -> str:
                 report += f"  └─ {entry.kcal_workout:.0f} ккал\n"
         report += "\n"
     
+    # Meals breakdown
+    if meals:
+        report += "🍽 <b>Питание:</b>\n"
+        
+        meal_icons = {
+            MealType.BREAKFAST: "🍳",
+            MealType.LUNCH: "🍲",
+            MealType.DINNER: "🍽",
+            MealType.SNACK: "🍪"
+        }
+        
+        meal_names = {
+            MealType.BREAKFAST: "Завтрак",
+            MealType.LUNCH: "Обед",
+            MealType.DINNER: "Ужин",
+            MealType.SNACK: "Перекус"
+        }
+        
+        for meal in meals:
+            icon = meal_icons.get(meal.meal_type, "🍽")
+            name = meal_names.get(meal.meal_type, "Еда")
+            time_str = f" в {meal.meal_time}" if meal.meal_time else ""
+            
+            report += f"\n{icon} <b>{name}{time_str}:</b>\n"
+            if meal.food_description:
+                # Show full description (no truncation)
+                report += f"  {meal.food_description}\n"
+            
+            if meal.kcal:
+                report += f"  ✨ {meal.kcal:.0f} ккал"
+                if meal.protein or meal.fat or meal.carbs:
+                    report += f" | Б:{meal.protein or 0:.0f} Ж:{meal.fat or 0:.0f} У:{meal.carbs or 0:.0f}"
+                report += "\n"
+        
+        report += "\n"
+    
     # Calories
     report += "🔥 <b>Калории:</b>\n"
     if entry.bmr:
@@ -208,7 +268,7 @@ def _format_day_report(entry: DayEntry, day: date) -> str:
     report += "\n"
     
     if entry.kcal_eaten:
-        report += f"  Съедено: {entry.kcal_eaten:.0f} ккал\n"
+        report += f"  <b>Съедено всего: {entry.kcal_eaten:.0f} ккал</b>\n"
         if entry.protein or entry.fat or entry.carbs:
             report += f"  БЖУ: {entry.protein or 0:.0f}/{entry.fat or 0:.0f}/{entry.carbs or 0:.0f}\n"
     
@@ -286,14 +346,14 @@ def _format_week_report(entries: list, start_date: date, end_date: date) -> str:
 async def callback_stats_today(callback: CallbackQuery):
     """Show today's summary via callback"""
     await callback.answer()
-    await cmd_today(callback.message)
+    await cmd_today(callback.message, user_id=callback.from_user.id)
 
 
 @router.callback_query(F.data == "stats_yesterday")
 async def callback_stats_yesterday(callback: CallbackQuery):
     """Show yesterday's summary via callback"""
     await callback.answer()
-    await cmd_yesterday(callback.message)
+    await cmd_yesterday(callback.message, user_id=callback.from_user.id)
 
 
 @router.callback_query(F.data == "stats_week")

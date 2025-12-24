@@ -2,7 +2,7 @@
 Database models for Telegram Bot - Food and Activity Diary
 """
 from datetime import datetime, date
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Boolean, Text, Enum, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, DateTime, Boolean, Text, Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -38,7 +38,7 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    telegram_user_id = Column(Integer, unique=True, nullable=False, index=True)
+    telegram_user_id = Column(BigInteger, unique=True, nullable=False, index=True)
     
     # Profile data
     gender = Column(String(10), default="male")  # male/female

@@ -59,14 +59,16 @@ class GeminiVisionProvider(VisionAIProvider):
   "assumptions": ["порция стандартная", "приготовлено на масле"]
 }
 
-Правила:
-- detected_items: список блюд (2-4 элемента)
-- description: одна строка, без переносов
-- calories, protein, fat, carbs: только числа
+ВАЖНО:
+- Ответ СТРОГО в формате JSON
+- НЕ используй переносы строк (\n) внутри строковых значений
+- description: одно предложение, без переносов
+- detected_items: короткие названия блюд (2-4 элемента)
+- calories, protein, fat, carbs: только числа (целые или десятичные)
 - confidence: число от 0.0 до 1.0
-- confidence_level: "low" или "medium" или "high"
+- confidence_level: только "low", "medium" или "high"
 - clarification_questions: максимум 2 вопроса, каждый с 2-3 вариантами
-- assumptions: 2-3 предположения о порции/приготовлении
+- assumptions: 2-3 коротких предположения
 
 Примеры вопросов:
 - "Это одна порция?" options: ["да", "пополам"]
@@ -185,9 +187,23 @@ class GeminiVisionProvider(VisionAIProvider):
                 # Если не получилось, пробуем очистить переносы строк внутри строк
                 import re
                 logger.warning(f"Первая попытка парсинга не удалась: {e}. Пробуем очистить JSON...")
-                # Заменяем переносы строк внутри строковых значений на пробелы
-                text = re.sub(r':\s*"([^"]*\n[^"]*)"', lambda m: ': "' + m.group(1).replace('\n', ' ') + '"', text, flags=re.MULTILINE)
-                data = json.loads(text)
+                
+                # Более агрессивная очистка:
+                # 1. Удаляем переносы строк внутри строковых значений
+                text = re.sub(r':\s*"([^"]*)"', lambda m: ': "' + m.group(1).replace('\n', ' ').replace('\r', ' ') + '"', text, flags=re.DOTALL)
+                
+                # 2. Удаляем запятые перед закрывающими скобками
+                text = re.sub(r',(\s*[}\]])', r'\1', text)
+                
+                # 3. Добавляем недостающие запятые между элементами массива
+                text = re.sub(r'"\s*\n\s*"', '", "', text)
+                
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError:
+                    # Если все еще не получается, используем fallback
+                    logger.error(f"Очистка не помогла, используем fallback парсинг")
+                    return self._fallback_parse(text)
             
             # Парсим уточняющие вопросы
             questions = []
@@ -246,23 +262,50 @@ class GeminiVisionProvider(VisionAIProvider):
             carbs_match = re.search(r'"carbs":\s*(\d+\.?\d*)', text)
             carbs = float(carbs_match.group(1)) if carbs_match else 50.0
             
-            # Извлекаем описание
-            desc_match = re.search(r'"description":\s*"([^"]*)"', text)
-            description = desc_match.group(1) if desc_match else "Еда на фото"
+            # Извлекаем описание (учитываем многострочность)
+            desc_match = re.search(r'"description":\s*"([^"]*)"', text, re.DOTALL)
+            description = desc_match.group(1).replace('\n', ' ').strip() if desc_match else "Еда на фото"
             
-            logger.warning("Использован fallback парсинг - данные могут быть неточными")
+            # Извлекаем detected_items
+            items_match = re.search(r'"detected_items":\s*\[(.*?)\]', text, re.DOTALL)
+            detected_items = ["Блюдо на фото"]
+            if items_match:
+                items_str = items_match.group(1)
+                items = re.findall(r'"([^"]*)"', items_str)
+                if items:
+                    detected_items = items
+            
+            # Извлекаем confidence
+            conf_match = re.search(r'"confidence":\s*(\d+\.?\d*)', text)
+            confidence = float(conf_match.group(1)) if conf_match else 0.5
+            
+            # Извлекаем confidence_level
+            conf_level_match = re.search(r'"confidence_level":\s*"([^"]*)"', text)
+            confidence_level = conf_level_match.group(1) if conf_level_match else 'medium'
+            
+            # Извлекаем assumptions
+            assumptions = []
+            assumptions_match = re.search(r'"assumptions":\s*\[(.*?)\]', text, re.DOTALL)
+            if assumptions_match:
+                assumptions_str = assumptions_match.group(1)
+                assumptions = [a.strip('"').strip() for a in re.findall(r'"([^"]*)"', assumptions_str)]
+            
+            if not assumptions:
+                assumptions = ["Стандартная порция"]
+            
+            logger.warning("Использован fallback парсинг - некоторые данные могут быть неточными")
             
             return PhotoFoodEstimate(
-                detected_items=["Блюдо на фото"],
+                detected_items=detected_items,
                 description=description,
                 calories=calories,
                 protein=protein,
                 fat=fat,
                 carbs=carbs,
-                confidence=0.3,
-                confidence_level='low',
+                confidence=confidence,
+                confidence_level=confidence_level,
                 clarification_questions=[],
-                assumptions=["Оценка приблизительная (ошибка парсинга JSON)"],
+                assumptions=assumptions,
                 model_used='',
                 raw_response=''
             )

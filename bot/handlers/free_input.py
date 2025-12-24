@@ -1,7 +1,7 @@
 """
 Free input handler - parse free-form text with AI estimation
 """
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import json
 import logging
 from aiogram import Router, F
@@ -27,6 +27,31 @@ class FreeInput(StatesGroup):
     meal_type_selection = State()
     meal_time_selection = State()
 
+
+def extract_date_from_text(text: str) -> date:
+    """
+    Извлекает дату из текста, распознавая временные маркеры
+    Returns: date объект (today, yesterday, etc.)
+    """
+    if not text:
+        return date.today()
+    
+    text_lower = text.lower()
+    
+    # Вчера
+    if any(word in text_lower for word in ['вчера', 'yesterday']):
+        return date.today() - timedelta(days=1)
+    
+    # Позавчера
+    if any(word in text_lower for word in ['позавчера', 'позовчера']):
+        return date.today() - timedelta(days=2)
+    
+    # Сегодня (явное указание)
+    if any(word in text_lower for word in ['сегодня', 'today']):
+        return date.today()
+    
+    # По умолчанию - сегодня
+    return date.today()
 
 @router.message(F.text, F.text.len() > 20)
 async def handle_free_text(message: Message, state: FSMContext):
@@ -55,6 +80,12 @@ async def handle_free_text(message: Message, state: FSMContext):
     # Parse the text
     parser = FreeTextParser(timezone=user.timezone)
     parsed_data, missing_fields = parser.parse(message.text)
+    
+    # Улучшаем распознавание даты, если парсер не нашел
+    if 'date' not in parsed_data or parsed_data.get('date') == date.today():
+        detected_date = extract_date_from_text(message.text)
+        if detected_date != date.today():
+            parsed_data['date'] = detected_date
     
     # Check if food needs AI estimation
     food_data = parsed_data.get('food', {})
