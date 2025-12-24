@@ -79,6 +79,26 @@ async def cmd_settime(message: Message):
             .values(**{db_field: time_str})
         )
         await db.commit()
+        
+        # Get updated user data
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        user = result.scalar_one()
+    
+    # Update scheduler with new times
+    from bot.scheduler import get_scheduler
+    scheduler = get_scheduler()
+    if scheduler:
+        await scheduler.schedule_user_notifications(
+            user.id,
+            user.telegram_user_id,
+            user.breakfast_time,
+            user.lunch_time,
+            user.dinner_time,
+            user.evening_reminder_time,
+            user.timezone
+        )
     
     meal_names = {
         'breakfast': 'Завтрак',
@@ -88,6 +108,75 @@ async def cmd_settime(message: Message):
     }
     
     await message.answer(f"✅ Время для '{meal_names[meal_type]}' установлено: {time_str}")
+
+
+@router.message(Command("settimezone"))
+async def cmd_settimezone(message: Message):
+    """Set timezone: /settimezone Europe/Moscow"""
+    user_id = message.from_user.id
+    
+    # Check access
+    user, has_access, error_msg = await check_user_access(user_id)
+    if not has_access:
+        await message.answer(error_msg)
+        return
+    
+    # Parse command
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.answer(
+            "❌ Неверный формат. Используй:\n"
+            "<code>/settimezone Europe/Moscow</code>\n"
+            "<code>/settimezone America/New_York</code>\n"
+            "<code>/settimezone Asia/Bangkok</code>\n\n"
+            "Полный список: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+            parse_mode="HTML"
+        )
+        return
+    
+    timezone_str = parts[1]
+    
+    # Validate timezone
+    import pytz
+    try:
+        pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        await message.answer(
+            f"❌ Неизвестный часовой пояс: {timezone_str}\n\n"
+            "Примеры: Europe/Moscow, America/New_York, Asia/Tokyo"
+        )
+        return
+    
+    # Update in database
+    async with get_db() as db:
+        await db.execute(
+            update(User)
+            .where(User.telegram_user_id == user_id)
+            .values(timezone=timezone_str)
+        )
+        await db.commit()
+        
+        # Get updated user
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        user = result.scalar_one()
+    
+    # Update scheduler
+    from bot.scheduler import get_scheduler
+    scheduler = get_scheduler()
+    if scheduler:
+        await scheduler.schedule_user_notifications(
+            user.id,
+            user.telegram_user_id,
+            user.breakfast_time,
+            user.lunch_time,
+            user.dinner_time,
+            user.evening_reminder_time,
+            user.timezone
+        )
+    
+    await message.answer(f"✅ Часовой пояс установлен: {timezone_str}")
 
 
 class UpdateProfile(StatesGroup):

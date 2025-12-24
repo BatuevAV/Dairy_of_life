@@ -6,7 +6,8 @@ from bot.calculations.calories import (
     calculate_sleep_hours,
     calculate_bmr,
     calculate_steps_kcal,
-    calculate_workout_kcal
+    calculate_workout_kcal,
+    CalorieCalculator
 )
 from bot.database.models import WorkoutType, User
 from datetime import time

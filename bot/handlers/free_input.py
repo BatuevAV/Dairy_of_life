@@ -15,7 +15,7 @@ from bot.config import settings
 from bot.database import get_db, User, DayEntry, MealEntry, InputMode, WorkoutType, MealType
 from bot.parsers import FreeTextParser
 from bot.calculations import update_day_entry_calculations
-from bot.ai import OllamaProvider
+from bot.ai.smart_provider import SmartAIProvider
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -74,18 +74,20 @@ async def handle_free_text(message: Message, state: FSMContext):
         # Try AI estimation
         await message.answer("🤖 Оцениваю калорийность с помощью AI...")
         
-        ai_provider = OllamaProvider()
+        ai_provider = SmartAIProvider()
         
-        if not await ai_provider.is_available():
+        estimate = await ai_provider.estimate_food(food_data['description'])
+        
+        if not estimate:
             await message.answer(
                 "⚠️ AI-сервис недоступен. Укажите калории вручную:\n"
                 "Ккал: 850"
             )
             return
         
-        ai_estimate = await ai_provider.estimate_food(food_data['description'])
+        estimate = await ai_provider.estimate_food(food_data['description'])
         
-        if ai_estimate:
+        if estimate:
             # Update AI usage counter
             async with get_db() as db:
                 user.ai_requests_today += 1
@@ -93,13 +95,13 @@ async def handle_free_text(message: Message, state: FSMContext):
                 await db.commit()
             
             # Update parsed data with AI estimate
-            parsed_data['food']['kcal'] = ai_estimate.total_calories
-            parsed_data['food']['protein'] = ai_estimate.total_protein
-            parsed_data['food']['fat'] = ai_estimate.total_fat
-            parsed_data['food']['carbs'] = ai_estimate.total_carbs
+            parsed_data['food']['kcal'] = estimate.total_calories
+            parsed_data['food']['protein'] = estimate.total_protein
+            parsed_data['food']['fat'] = estimate.total_fat
+            parsed_data['food']['carbs'] = estimate.total_carbs
             parsed_data['food']['ai_estimated'] = True
-            parsed_data['food']['ai_model'] = ai_estimate.model_used
-            parsed_data['food']['ai_confidence'] = ai_estimate.confidence
+            parsed_data['food']['ai_model'] = estimate.model_used
+            parsed_data['food']['ai_confidence'] = getattr(estimate, 'confidence', 'medium')
             parsed_data['food']['ai_items'] = [
                 {
                     'name': item.name,
@@ -108,7 +110,7 @@ async def handle_free_text(message: Message, state: FSMContext):
                     'fat': item.fat,
                     'carbs': item.carbs
                 }
-                for item in ai_estimate.items
+                for item in estimate.items
             ]
         else:
             await message.answer(
@@ -154,6 +156,31 @@ async def confirm_free_input(callback: CallbackQuery, state: FSMContext):
     
     # Check if food was detected
     if 'food' in parsed:
+        # Check if meal_type already detected in text
+        if 'meal_type' in parsed['food']:
+            # Meal type already recognized, ask if user wants to specify time (optional)
+            meal_type_names = {
+                'breakfast': '🍳 Завтрак',
+                'lunch': '🍲 Обед',
+                'dinner': '🍽 Ужин',
+                'snack': '🍪 Перекус'
+            }
+            meal_name = meal_type_names.get(parsed['food']['meal_type'], 'Приём пищи')
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🕐 Указать время", callback_data="food_meal_set_time")],
+                [InlineKeyboardButton(text="⏭ Пропустить", callback_data="food_meal_skip")]
+            ])
+            
+            await callback.message.edit_text(
+                f"✅ {meal_name} распознан!\n\n"
+                f"💡 Хотите указать точное время приёма пищи?\n"
+                f"(Это поможет более точному анализу, но не обязательно)",
+                reply_markup=keyboard
+            )
+            await state.set_state(FreeInput.meal_type_selection)
+            return
+        
         # Ask for meal type
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -414,9 +441,29 @@ async def handle_meal_time_input(message: Message, state: FSMContext):
         time_obj = datetime.strptime(time_text, "%H:%M").time()
         meal_time_str = time_obj.strftime("%H:%M")
         
-        # Show meal type selection with time saved
+        # Save time
         await state.update_data(meal_time=meal_time_str)
         
+        # Check if meal_type was already recognized
+        data = await state.get_data()
+        parsed = data.get('parsed_data', {})
+        
+        if 'food' in parsed and 'meal_type' in parsed['food']:
+            # Meal type already recognized, save directly
+            meal_type_map = {
+                "breakfast": MealType.BREAKFAST,
+                "lunch": MealType.LUNCH,
+                "dinner": MealType.DINNER,
+                "snack": MealType.SNACK
+            }
+            meal_type = meal_type_map.get(parsed['food']['meal_type'])
+            await state.update_data(meal_type=meal_type)
+            
+            await message.answer(f"✅ Время установлено: {meal_time_str}")
+            await _save_entry_from_message(message, state)
+            return
+        
+        # Meal type not recognized, ask for it
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🍳 Завтрак", callback_data="food_meal_breakfast"),
@@ -445,6 +492,99 @@ async def handle_meal_time_input(message: Message, state: FSMContext):
             "❌ Неверный формат времени. Используй HH:MM\n"
             "Например: 08:30 или 14:00"
         )
+
+
+async def _save_entry_from_message(message: Message, state: FSMContext):
+    """Save entry from message (not callback)"""
+    data = await state.get_data()
+    parsed = data['parsed_data']
+    raw_text = data['raw_text']
+    user_db_id = data['user_db_id']
+    meal_type = data.get('meal_type')
+    meal_time = data.get('meal_time')
+    
+    async with get_db() as db:
+        # Get user
+        result = await db.execute(select(User).where(User.id == user_db_id))
+        user = result.scalar_one()
+        
+        # Get entry date
+        entry_date = parsed.get('date', date.today())
+        
+        # Check if entry exists
+        result = await db.execute(
+            select(DayEntry).where(
+                and_(
+                    DayEntry.user_id == user_db_id,
+                    DayEntry.entry_date == entry_date
+                )
+            )
+        )
+        entry = result.scalar_one_or_none()
+        
+        if entry:
+            # Update existing entry (merge data)
+            _merge_parsed_data_to_entry(entry, parsed, raw_text)
+        else:
+            # Create new entry
+            entry = _create_entry_from_parsed(user_db_id, entry_date, parsed, raw_text)
+            db.add(entry)
+        
+        # If food was detected and meal_type is set, create MealEntry
+        if 'food' in parsed and meal_type:
+            food = parsed['food']
+            
+            meal_entry = MealEntry(
+                user_id=user_db_id,
+                entry_date=entry_date,
+                meal_type=meal_type,
+                meal_time=meal_time,
+                kcal=food.get('kcal'),
+                protein=food.get('protein'),
+                fat=food.get('fat'),
+                carbs=food.get('carbs'),
+                food_description=food.get('description'),
+                raw_text=raw_text,
+                food_ai_estimated=food.get('ai_estimated', False),
+                food_ai_model=food.get('ai_model'),
+                food_ai_confidence=food.get('ai_confidence'),
+                food_items_json=json.dumps(food.get('ai_items', []), ensure_ascii=False) if 'ai_items' in food else None
+            )
+            
+            db.add(meal_entry)
+        
+        # Calculate fields
+        entry = update_day_entry_calculations(entry, user)
+        
+        await db.commit()
+    
+    meal_type_emoji = {
+        MealType.BREAKFAST: "🍳",
+        MealType.LUNCH: "🍽",
+        MealType.DINNER: "🍴",
+        MealType.SNACK: "🥤"
+    }
+    
+    meal_type_names = {
+        MealType.BREAKFAST: "Завтрак",
+        MealType.LUNCH: "Обед",
+        MealType.DINNER: "Ужин",
+        MealType.SNACK: "Перекус"
+    }
+    
+    message_text = "✅ Данные сохранены!"
+    
+    if meal_type and meal_time:
+        emoji = meal_type_emoji.get(meal_type, "🍽")
+        name = meal_type_names.get(meal_type, "Приём пищи")
+        message_text += f"\n{emoji} {name} в {meal_time}"
+    elif meal_type:
+        emoji = meal_type_emoji.get(meal_type, "🍽")
+        name = meal_type_names.get(meal_type, "Приём пищи")
+        message_text += f"\n{emoji} {name}"
+    
+    await message.answer(message_text, parse_mode="HTML")
+    await state.clear()
 
 
 async def _save_entry(callback: CallbackQuery, state: FSMContext):

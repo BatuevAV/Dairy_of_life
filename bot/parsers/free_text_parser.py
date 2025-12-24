@@ -280,6 +280,19 @@ class FreeTextParser:
         """Parse food/calorie information"""
         food_data = {}
         
+        # Parse meal type from text
+        meal_type_patterns = [
+            (r'на завтрак|завтрак|breakfast', 'breakfast'),
+            (r'на обед|обед|lunch', 'lunch'),
+            (r'на ужин|ужин|dinner', 'dinner'),
+            (r'перекус|snack', 'snack'),
+        ]
+        
+        for pattern, meal_type in meal_type_patterns:
+            if re.search(pattern, text_lower):
+                food_data['meal_type'] = meal_type
+                break
+        
         # Parse total calories
         kcal_patterns = [
             r'ккал[:\s]*(\d+)',

@@ -12,15 +12,22 @@ class RecommendationsProvider:
     """Generate personalized recommendations using AI"""
     
     def __init__(self, provider: str = None):
-        """Initialize with AI provider (ollama/gemini)"""
+        """Initialize with AI provider (auto/ollama/gemini)"""
         self.provider = provider or settings.DEFAULT_AI_PROVIDER
         
-        if self.provider == "ollama":
+        if self.provider == "auto" or self.provider == "smart":
+            # Use smart provider with automatic fallback
+            from bot.ai.smart_provider import SmartAIProvider
+            self.ai = SmartAIProvider()
+            self.use_smart = True
+        elif self.provider == "ollama":
             from bot.ai.ollama_provider import OllamaProvider
             self.ai = OllamaProvider()
+            self.use_smart = False
         elif self.provider == "gemini":
             from bot.ai.gemini_provider import GeminiProvider
             self.ai = GeminiProvider()
+            self.use_smart = False
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}")
     

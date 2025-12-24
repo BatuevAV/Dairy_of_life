@@ -16,7 +16,7 @@ from bot.database import init_db
 from bot.scheduler import init_scheduler
 from bot.handlers import (
     start, mode, free_input, guided_input, reports, export,
-    settings as settings_handler, admin, photo_input, recipes, menu
+    settings as settings_handler, admin, photo_input, recipes, menu, ai_status
 )
 
 # Configure logging
@@ -64,6 +64,7 @@ async def main():
     # Register routers
     dp.include_router(start.router)
     dp.include_router(admin.router)
+    dp.include_router(ai_status.router)  # AI status command
     dp.include_router(menu.router)  # Main menu handler
     dp.include_router(mode.router)
     dp.include_router(recipes.router)  # Recipe handler

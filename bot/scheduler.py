@@ -5,6 +5,7 @@ Uses APScheduler for scheduling tasks
 import asyncio
 import logging
 from datetime import datetime
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from aiogram import Bot
@@ -24,6 +25,7 @@ class NotificationScheduler:
     def __init__(self, bot: Bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
+        self.timezone = pytz.timezone(settings.TIMEZONE)
         
     async def send_breakfast_notification(self, user_id: int, telegram_id: int):
         """Send morning breakfast suggestion"""
@@ -188,8 +190,19 @@ class NotificationScheduler:
     
     async def schedule_user_notifications(self, user_id: int, telegram_id: int, 
                                          breakfast_time: str, lunch_time: str, 
-                                         dinner_time: str, evening_time: str):
+                                         dinner_time: str, evening_time: str,
+                                         user_timezone: str = None):
         """Schedule notifications for a specific user"""
+        
+        # Use user's timezone or default
+        if user_timezone:
+            try:
+                tz = pytz.timezone(user_timezone)
+            except:
+                logger.warning(f"Invalid timezone {user_timezone} for user {telegram_id}, using default")
+                tz = self.timezone
+        else:
+            tz = self.timezone
         
         # Parse time strings (HH:MM)
         breakfast_hour, breakfast_minute = map(int, breakfast_time.split(':'))
@@ -200,38 +213,42 @@ class NotificationScheduler:
         # Schedule breakfast
         self.scheduler.add_job(
             self.send_breakfast_notification,
-            CronTrigger(hour=breakfast_hour, minute=breakfast_minute),
+            CronTrigger(hour=breakfast_hour, minute=breakfast_minute, timezone=tz),
             args=[user_id, telegram_id],
             id=f"breakfast_{user_id}",
             replace_existing=True
         )
+        logger.info(f"✅ Scheduled breakfast for user {telegram_id} at {breakfast_hour:02d}:{breakfast_minute:02d} ({tz})")
         
         # Schedule lunch
         self.scheduler.add_job(
             self.send_lunch_notification,
-            CronTrigger(hour=lunch_hour, minute=lunch_minute),
+            CronTrigger(hour=lunch_hour, minute=lunch_minute, timezone=tz),
             args=[user_id, telegram_id],
             id=f"lunch_{user_id}",
             replace_existing=True
         )
+        logger.info(f"✅ Scheduled lunch for user {telegram_id} at {lunch_hour:02d}:{lunch_minute:02d} ({tz})")
         
         # Schedule dinner
         self.scheduler.add_job(
             self.send_dinner_notification,
-            CronTrigger(hour=dinner_hour, minute=dinner_minute),
+            CronTrigger(hour=dinner_hour, minute=dinner_minute, timezone=tz),
             args=[user_id, telegram_id],
             id=f"dinner_{user_id}",
             replace_existing=True
         )
+        logger.info(f"✅ Scheduled dinner for user {telegram_id} at {dinner_hour:02d}:{dinner_minute:02d} ({tz})")
         
         # Schedule evening reminder
         self.scheduler.add_job(
             self.send_evening_reminder,
-            CronTrigger(hour=evening_hour, minute=evening_minute),
+            CronTrigger(hour=evening_hour, minute=evening_minute, timezone=tz),
             args=[user_id, telegram_id],
             id=f"evening_{user_id}",
             replace_existing=True
         )
+        logger.info(f"✅ Scheduled evening reminder for user {telegram_id} at {evening_hour:02d}:{evening_minute:02d} ({tz})")
         
         logger.info(f"Scheduled notifications for user {telegram_id}")
     
@@ -252,7 +269,8 @@ class NotificationScheduler:
                             user.breakfast_time,
                             user.lunch_time,
                             user.dinner_time,
-                            user.evening_reminder_time
+                            user.evening_reminder_time,
+                            user.timezone
                         )
                 
                 logger.info(f"Loaded {len(users)} users with notifications enabled")

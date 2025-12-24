@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 import logging
 
 from bot.database.models import Base
@@ -45,7 +46,7 @@ async def drop_db():
 
 
 @asynccontextmanager
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get database session"""
     async with async_session_maker() as session:
         try:

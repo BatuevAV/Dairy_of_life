@@ -149,12 +149,22 @@ JSON:"""
             items = []
             for item_data in data.get("items", []):
                 try:
+                    protein = float(item_data.get("protein", 0))
+                    fat = float(item_data.get("fat", 0))
+                    carbs = float(item_data.get("carbs", 0))
+                    calories = float(item_data.get("calories", 0))
+                    
+                    # If calories is 0 but we have macros, calculate from macros
+                    if calories == 0 and (protein > 0 or fat > 0 or carbs > 0):
+                        calories = (protein * 4) + (fat * 9) + (carbs * 4)
+                        logger.info(f"Recalculated calories from macros: {calories}")
+                    
                     item = FoodItem(
                         name=item_data.get("name", "Unknown"),
-                        calories=float(item_data.get("calories", 0)),
-                        protein=float(item_data.get("protein", 0)),
-                        fat=float(item_data.get("fat", 0)),
-                        carbs=float(item_data.get("carbs", 0)),
+                        calories=calories,
+                        protein=protein,
+                        fat=fat,
+                        carbs=carbs,
                         confidence=0.75  # Ollama confidence
                     )
                     items.append(item)
