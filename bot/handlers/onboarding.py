@@ -1,6 +1,8 @@
 """
 Onboarding handler - initial profile setup for new users
 """
+import logging
+from datetime import date
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,7 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import update, select
 
-from bot.database import get_db, User
+logger = logging.getLogger(__name__)
+
+from bot.database import get_db, User, DayEntry
 from bot.ai.recommendations_provider import RecommendationsProvider
 from bot.keyboards import get_main_keyboard
 
@@ -160,6 +164,8 @@ async def process_weight(message: Message, state: FSMContext):
 async def skip_weight(callback: CallbackQuery, state: FSMContext):
     """Skip weight input"""
     await callback.answer()
+    # Remove keyboard to show action was processed
+    await callback.message.edit_reply_markup(reply_markup=None)
     await ask_goal(callback.message, state)
 
 
@@ -196,6 +202,8 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
     }
     
     if callback.data == "skip_goal":
+        # Remove keyboard to show action was processed
+        await callback.message.edit_reply_markup(reply_markup=None)
         await ask_medical(callback.message, state)
         return
     
@@ -212,6 +220,8 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
     
     goal = goal_map.get(callback.data, "")
     await state.update_data(goal=goal)
+    # Remove keyboard to show action was processed
+    await callback.message.edit_reply_markup(reply_markup=None)
     await ask_medical(callback.message, state)
 
 
@@ -265,6 +275,8 @@ async def process_medical(message: Message, state: FSMContext):
 async def skip_medical(callback: CallbackQuery, state: FSMContext):
     """Skip medical recommendations"""
     await callback.answer()
+    # Remove keyboard to show action was processed
+    await callback.message.edit_reply_markup(reply_markup=None)
     await complete_onboarding(callback.message, state)
 
 
@@ -287,33 +299,107 @@ async def complete_onboarding(message: Message, state: FSMContext):
     if data.get("medical_recommendations"):
         update_data["medical_recommendations"] = data["medical_recommendations"]
     
-    # Update user in database
+    # Update user in database - first check if user exists
     async with get_db() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if not existing_user:
+            # User doesn't exist, this shouldn't happen but handle gracefully
+            logger.error(f"User {user_id} not found during onboarding completion")
+            await message.answer(
+                "❌ Пользователь не найден. Пожалуйста, начните с команды /start"
+            )
+            await state.clear()
+            return
+        
+        logger.info(f"Completing onboarding for user {user_id} with data: {update_data}")
+        
+        # Update user
         await db.execute(
             update(User)
             .where(User.telegram_user_id == user_id)
             .values(**update_data)
         )
         await db.commit()
+        logger.info(f"Profile updated successfully for user {user_id}")
     
-    # Get updated user in a new session
+    # Save weight to today's DayEntry if provided
+    if data.get("weight"):
+        async with get_db() as db:
+            today = date.today()
+            result = await db.execute(
+                select(User).where(User.telegram_user_id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                # User not found, skip weight saving
+                pass
+            else:
+                # Check if today's entry exists
+                result = await db.execute(
+                    select(DayEntry).where(
+                        DayEntry.user_id == user.id,
+                        DayEntry.entry_date == today
+                    )
+                )
+                day_entry = result.scalar_one_or_none()
+                
+                if day_entry:
+                    # Update existing entry
+                    await db.execute(
+                        update(DayEntry)
+                        .where(DayEntry.id == day_entry.id)
+                        .values(weight=data["weight"])
+                    )
+                else:
+                    # Create new entry with weight
+                    new_entry = DayEntry(
+                        user_id=user.id,
+                        entry_date=today,
+                        weight=data["weight"]
+                    )
+                    db.add(new_entry)
+                
+                await db.commit()
+    
+    # Get updated user for AI recommendations
     async with get_db() as db:
-        from sqlalchemy import select
         result = await db.execute(
             select(User).where(User.telegram_user_id == user_id)
         )
         user = result.scalar_one_or_none()
         
         if not user:
-            await message.answer("❌ Ошибка при сохранении профиля. Попробуйте /onboarding еще раз.")
+            logger.error(f"User {user_id} not found after profile update")
+            await message.answer(
+                "❌ Ошибка при получении профиля. Попробуйте /start еще раз."
+            )
             await state.clear()
             return
     
     await state.clear()
     
+    # Show profile completion message
+    profile_summary = f"👤 <b>Профиль успешно создан!</b>\n\n"
+    profile_summary += f"📊 <b>Твои данные:</b>\n"
+    profile_summary += f"• Пол: {'Мужской' if data.get('gender') == 'male' else 'Женский'}\n"
+    profile_summary += f"• Возраст: {data.get('age', 'не указан')} лет\n"
+    profile_summary += f"• Рост: {data.get('height', 'не указан')} см\n"
+    
+    if data.get('weight'):
+        profile_summary += f"• Вес: {data.get('weight')} кг\n"
+    
+    if data.get('goal'):
+        profile_summary += f"• Цель: {data.get('goal')}\n"
+    
+    await message.answer(profile_summary, parse_mode="HTML")
+    
     # Generate AI recommendation
     await message.answer(
-        "✅ <b>Профиль настроен!</b>\n\n"
         "⏳ Генерирую персональные рекомендации...",
         parse_mode="HTML"
     )
