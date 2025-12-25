@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.sql import and_
 
 from bot.config import settings
-from bot.database import get_db, User, DayEntry
+from bot.database import get_db, User, DayEntry, MealEntry
 from bot.utils import create_excel_export, check_user_access
 
 router = Router()
@@ -89,6 +89,18 @@ async def callback_export(callback: CallbackQuery):
             ).order_by(DayEntry.entry_date)
         )
         entries = result.scalars().all()
+        
+        # Get meal entries for the same period
+        result = await db.execute(
+            select(MealEntry).where(
+                and_(
+                    MealEntry.user_id == user.id,
+                    MealEntry.entry_date >= start_date,
+                    MealEntry.entry_date <= end_date
+                )
+            ).order_by(MealEntry.entry_date, MealEntry.meal_time)
+        )
+        meal_entries = result.scalars().all()
     
     if not entries:
         await callback.message.edit_text(
@@ -99,7 +111,7 @@ async def callback_export(callback: CallbackQuery):
     
     # Create Excel file
     try:
-        excel_buffer = create_excel_export(user, entries, days)
+        excel_buffer = create_excel_export(user, entries, meal_entries, days)
         
         # Prepare filename
         filename = f"diary_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.xlsx"
