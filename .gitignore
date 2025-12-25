@@ -82,3 +82,7 @@ Temporary Items
 # Large files
 Ollama.zip
 *.zip
+
+# Test files
+test_*.xlsx
+~$*.xlsx
