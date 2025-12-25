@@ -4,6 +4,7 @@ Photo input handler - анализ фото еды
 import logging
 import re
 from datetime import date, timedelta
+from typing import Optional
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -24,6 +25,32 @@ class PhotoInputState(StatesGroup):
     waiting_for_clarification = State()  # Ожидание ответов на вопросы
     waiting_for_confirmation = State()  # Ожидание подтверждения
     waiting_for_meal_time = State()  # Ожидание времени приема пищи
+
+
+def extract_portion_info(text: str) -> Optional[str]:
+    """Извлечь информацию о размере порции из текста"""
+    if not text:
+        return None
+    
+    text_lower = text.lower()
+    
+    # Полный список возможных вариантов
+    portions = {
+        r'\bкусоч(ек|ка|ку)\b': 'маленький кусочек',
+        r'\bполпорции\b|\bпол порции\b|\bполовин(а|у)\b': 'половина порции',
+        r'\bнемного\b|\bчуть-чуть\b|\bмаленьк(ая|ую) порц': 'небольшая порция',
+        r'\bбольш(ая|ую) порц|\bдвойн(ая|ую)\b': 'большая порция',
+        r'\bцел(ый|ую|ая)\b': 'целое блюдо',
+        r'\b2 куска\b|\bдва куска\b': '2 кусочка',
+        r'\b3 куска\b|\bтри куска\b': '3 кусочка',
+    }
+    
+    import re
+    for pattern, label in portions.items():
+        if re.search(pattern, text_lower):
+            return label
+    
+    return None
 
 
 def extract_date_from_text(text: str) -> date:
@@ -108,8 +135,12 @@ async def handle_photo(message: Message, state: FSMContext):
         photo_caption = message.caption or ""
         entry_date = extract_date_from_text(photo_caption)
         
+        # Извлекаем информацию о размере порции
+        portion_info = extract_portion_info(photo_caption)
+        additional_context = f"Размер порции: {portion_info}" if portion_info else None
+        
         # Анализируем
-        estimate = await vision_provider.analyze_food_photo(photo_data)
+        estimate = await vision_provider.analyze_food_photo(photo_data, additional_context=additional_context)
         
         if not estimate:
             await status_msg.edit_text(
@@ -436,11 +467,29 @@ async def handle_photo_meal_type(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "photo_set_time")
 async def handle_photo_set_time(callback: CallbackQuery, state: FSMContext):
     """Ask user to specify meal time"""
+    from datetime import date, timedelta
     await callback.answer()
+    
+    # Get entry date from state to show it
+    data = await state.get_data()
+    entry_date = data.get('entry_date', date.today())
+    
+    # Format date label
+    date_info = ""
+    if entry_date != date.today():
+        days_diff = (date.today() - entry_date).days
+        if days_diff == 1:
+            date_info = f"📆 Дата: <b>вчера</b> ({entry_date.strftime('%d.%m.%Y')})\n\n"
+        elif days_diff == 2:
+            date_info = f"📆 Дата: <b>позавчера</b> ({entry_date.strftime('%d.%m.%Y')})\n\n"
+        else:
+            date_info = f"📆 Дата: <b>{entry_date.strftime('%d.%m.%Y')}</b>\n\n"
+    
     await callback.message.edit_text(
-        "⏰ <b>Укажи время приема пищи</b>\n\n"
-        "Напиши время в формате HH:MM\n"
-        "Например: 08:30 или 14:00",
+        f"⏰ <b>Укажи время приема пищи</b>\n\n"
+        f"{date_info}"
+        f"Напиши время в формате HH:MM\n"
+        f"Например: 08:30 или 19:45",
         parse_mode="HTML"
     )
     await state.set_state(PhotoInputState.waiting_for_meal_time)
@@ -451,6 +500,26 @@ async def handle_photo_meal_time_input(message: Message, state: FSMContext):
     """Process meal time input for photo"""
     from datetime import datetime, date, timedelta
     time_text = message.text.strip()
+    
+    # Check if user is trying to specify date (вчера/позавчера)
+    date_from_text = extract_date_from_text(time_text)
+    if date_from_text != date.today():
+        # User mentioned yesterday/day before - update date in state
+        await state.update_data(entry_date=date_from_text)
+        
+        date_label = ""
+        if date_from_text == date.today() - timedelta(days=1):
+            date_label = "вчера"
+        elif date_from_text == date.today() - timedelta(days=2):
+            date_label = "позавчера"
+        
+        await message.answer(
+            f"📆 Дата изменена на <b>{date_label}</b> ({date_from_text.strftime('%d.%m.%Y')})\n\n"
+            "⏰ Теперь укажи время в формате HH:MM\n"
+            "Например: 08:30 или 19:45",
+            parse_mode="HTML"
+        )
+        return
     
     # Parse time
     try:
@@ -466,9 +535,13 @@ async def handle_photo_meal_time_input(message: Message, state: FSMContext):
         entry_datetime = datetime.combine(entry_date, time_obj)
         
         if entry_datetime > now:
+            current_date_str = entry_date.strftime('%d.%m.%Y')
             await message.answer(
-                "⚠️ Нельзя указать время в будущем!\n"
-                "Пожалуйста, укажи корректное время."
+                f"⚠️ Нельзя указать время в будущем!\n"
+                f"Дата: {current_date_str}\n"
+                f"Введенное время: {meal_time_str}\n\n"
+                "💡 Если это было вчера - напиши 'вчера', и я обновлю дату.",
+                parse_mode="HTML"
             )
             return
         

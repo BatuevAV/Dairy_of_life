@@ -76,6 +76,9 @@ class User(Base):
     is_allowed = Column(Boolean, default=False)
     allowed_by = Column(Integer, nullable=True)  # User ID who allowed this user
     
+    # Onboarding
+    profile_completed = Column(Boolean, default=False)  # Has user completed initial profile setup
+    
     # AI usage limits
     ai_requests_today = Column(Integer, default=0)
     ai_requests_limit = Column(Integer, default=30)  # Per day

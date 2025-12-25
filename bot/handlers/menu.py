@@ -8,10 +8,12 @@ from sqlalchemy import select
 
 from bot.database import get_db, User
 from bot.utils import check_user_access
+from bot.keyboards import get_main_keyboard
 
 router = Router()
 
 
+@router.message(F.text == "📋 Меню")
 @router.message(Command("menu"))
 async def cmd_menu(message: Message):
     """Show main menu"""

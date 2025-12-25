@@ -2,6 +2,7 @@
 Free input handler - parse free-form text with AI estimation
 """
 from datetime import date, datetime, time, timedelta
+from typing import Optional
 import json
 import logging
 from aiogram import Router, F
@@ -26,6 +27,32 @@ class FreeInput(StatesGroup):
     confirm = State()
     meal_type_selection = State()
     meal_time_selection = State()
+
+
+def extract_portion_info(text: str) -> Optional[str]:
+    """Извлечь информацию о размере порции из текста"""
+    if not text:
+        return None
+    
+    text_lower = text.lower()
+    
+    # Полный список возможных вариантов
+    portions = {
+        r'\bкусоч(ек|ка|ку)\b': 'маленький кусочек',
+        r'\bполпорции\b|\bпол порции\b|\bполовин(а|у)\b': 'половина порции',
+        r'\bнемного\b|\bчуть-чуть\b|\bмаленьк(ая|ую) порц': 'небольшая порция',
+        r'\bбольш(ая|ую) порц|\bдвойн(ая|ую)\b': 'большая порция',
+        r'\bцел(ый|ую|ая)\b': 'целое блюдо',
+        r'\b2 куска\b|\bдва куска\b': '2 кусочка',
+        r'\b3 куска\b|\bтри куска\b': '3 кусочка',
+    }
+    
+    import re
+    for pattern, label in portions.items():
+        if re.search(pattern, text_lower):
+            return label
+    
+    return None
 
 
 def extract_date_from_text(text: str) -> date:
@@ -87,6 +114,9 @@ async def handle_free_text(message: Message, state: FSMContext):
         if detected_date != date.today():
             parsed_data['date'] = detected_date
     
+    # Извлекаем информацию о размере порции
+    portion_info = extract_portion_info(message.text)
+    
     # Check if food needs AI estimation
     food_data = parsed_data.get('food', {})
     needs_ai = food_data and 'description' in food_data and 'kcal' not in food_data
@@ -107,7 +137,12 @@ async def handle_free_text(message: Message, state: FSMContext):
         
         ai_provider = SmartAIProvider()
         
-        estimate = await ai_provider.estimate_food(food_data['description'])
+        # Добавляем информацию о порции в описание, если она есть
+        food_description = food_data['description']
+        if portion_info:
+            food_description = f"{food_description} ({portion_info})"
+        
+        estimate = await ai_provider.estimate_food(food_description)
         
         if not estimate:
             await message.answer(

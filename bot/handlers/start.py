@@ -10,6 +10,7 @@ from sqlalchemy import select
 from bot.config import settings
 from bot.database import get_db, User, InputMode
 from bot.ai.recommendations_provider import RecommendationsProvider
+from bot.keyboards import get_main_keyboard
 
 router = Router()
 
@@ -37,54 +38,37 @@ async def cmd_start(message: Message, state: FSMContext):
                 input_mode=InputMode.GUIDED,
                 timezone=settings.TIMEZONE,
                 is_owner=is_owner,
-                is_allowed=is_owner  # Owner is always allowed, others need approval
+                is_allowed=is_owner,  # Owner is always allowed, others need approval
+                profile_completed=False  # New users need to complete onboarding
             )
             db.add(user)
             await db.commit()
+            await db.refresh(user)
             
-            # Welcome message for new users
+            # Start onboarding for new users (both owner and regular)
             if is_owner:
-                # Generate AI recommendation for owner
-                try:
-                    provider = RecommendationsProvider()
-                    brief_rec = await provider.generate_brief_recommendation(user)
-                    
-                    welcome_msg = (
-                        "👑 <b>Добро пожаловать, владелец!</b>\n\n"
-                        f"💡 <b>Краткая рекомендация:</b>\n{brief_rec}\n\n"
-                        "<b>Управление пользователями:</b>\n"
-                        "/allow <user_id> - разрешить доступ\n"
-                        "/disallow <user_id> - запретить доступ\n"
-                        "/users - список пользователей\n\n"
-                        "Настройте профиль и уведомления: /settings"
-                    )
-                    
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🥗 Подробно о питании", callback_data="detailed_nutrition")],
-                        [InlineKeyboardButton(text="💪 Подробно о тренировках", callback_data="detailed_workout")],
-                        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="open_settings")]
-                    ])
-                    
-                    await message.answer(welcome_msg, parse_mode="HTML", reply_markup=keyboard)
-                except Exception as e:
-                    await message.answer(
-                        "👑 <b>Добро пожаловать, владелец!</b>\n\n"
-                        "У вас полный доступ к боту.\n\n"
-                        "<b>Управление пользователями:</b>\n"
-                        "/allow <user_id> - разрешить доступ\n"
-                        "/disallow <user_id> - запретить доступ\n"
-                        "/users - список пользователей\n\n"
-                        "Сначала настройте профиль: /settings",
-                        parse_mode="HTML"
-                    )
+                await message.answer(
+                    "👑 <b>Добро пожаловать, владелец!</b>\n\n"
+                    "У вас полный доступ к боту.\n\n"
+                    "<b>Команды владельца:</b>\n"
+                    "/allow <user_id> - разрешить доступ\n"
+                    "/disallow <user_id> - запретить доступ\n"
+                    "/users - список пользователей",
+                    parse_mode="HTML"
+                )
             else:
                 await message.answer(
                     f"👋 <b>Привет, {message.from_user.first_name}!</b>\n\n"
                     "📝 Вы зарегистрированы в боте.\n\n"
                     "⏳ <b>Ожидайте одобрения владельца</b>\n\n"
                     f"Ваш ID: <code>{user_id}</code>\n"
-                    "Отправьте этот ID владельцу бота для получения доступа."
+                    "Отправьте этот ID владельцу бота для получения доступа.",
+                    parse_mode="HTML"
                 )
+            
+            # Start onboarding process
+            from bot.handlers.onboarding import start_onboarding
+            await start_onboarding(message, state, user)
             return
         
         # Check access for existing users
@@ -111,7 +95,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 "/week - Статистика за неделю\n"
                 "/export - Экспорт в Excel\n"
                 "/settings - Настройки профиля\n"
-                "/help - Справка\n\n"
+                "/help - Справка. Полный список команд\n\n"
                 "Текущий режим ввода: <b>Пошаговый</b>\n"
                 "Используй /mode для изменения."
             )
@@ -125,11 +109,11 @@ async def cmd_start(message: Message, state: FSMContext):
                 "/week - Статистика за неделю\n"
                 "/export - Экспорт в Excel\n"
                 "/settings - Настройки профиля\n"
-                "/help - Справка\n\n"
+                "/help - Справка. Полный список команд\n\n"
                 f"Текущий режим ввода: <b>{'Свободный' if user.input_mode == InputMode.FREE else 'Пошаговый'}</b>"
             )
     
-    await message.answer(welcome_text, parse_mode="HTML")
+    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_main_keyboard())
 
 
 @router.message(Command("help"))
@@ -213,3 +197,53 @@ async def callback_open_settings(callback: CallbackQuery):
     from bot.handlers.settings import cmd_settings
     await cmd_settings(callback.message)
     await callback.answer()
+
+
+@router.callback_query(F.data == "detailed_nutrition")
+async def callback_detailed_nutrition(callback: CallbackQuery):
+    """Show detailed nutrition recommendation"""
+    await callback.answer()
+    user_id = callback.from_user.id
+    
+    async with get_db() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        user = result.scalar_one_or_none()
+    
+    if not user:
+        return
+    
+    await callback.message.answer("⏳ Генерирую подробные рекомендации по питанию...")
+    
+    try:
+        provider = RecommendationsProvider()
+        nutrition_rec = await provider.generate_detailed_nutrition_recommendation(user)
+        await callback.message.answer(nutrition_rec, parse_mode="HTML")
+    except Exception as e:
+        await callback.message.answer("❌ Не удалось сгенерировать рекомендации. Попробуйте позже.")
+
+
+@router.callback_query(F.data == "detailed_workout")
+async def callback_detailed_workout(callback: CallbackQuery):
+    """Show detailed workout recommendation"""
+    await callback.answer()
+    user_id = callback.from_user.id
+    
+    async with get_db() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_user_id == user_id)
+        )
+        user = result.scalar_one_or_none()
+    
+    if not user:
+        return
+    
+    await callback.message.answer("⏳ Генерирую подробные рекомендации по тренировкам...")
+    
+    try:
+        provider = RecommendationsProvider()
+        workout_rec = await provider.generate_detailed_workout_recommendation(user)
+        await callback.message.answer(workout_rec, parse_mode="HTML")
+    except Exception as e:
+        await callback.message.answer("❌ Не удалось сгенерировать рекомендации. Попробуйте позже.")
